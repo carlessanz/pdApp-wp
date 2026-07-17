@@ -5,7 +5,7 @@ import type { FormEvent, ReactNode } from 'react'
 // OJO: protección cosmética para una herramienta interna de pruebas — la publishable key
 // y las políticas RLS de anon siguen expuestas en el cliente.
 // TODO: sustituir por autenticación real (Supabase Auth) antes de producción.
-const PASSWORD_HASH = '3076d5d71721308b9c48c328583225451f42935287feff1b88ede6166e8a4e00'
+const PASSWORD_HASH = '011efea0cac926232add733f86e3d9f6ab53c237be9e40f9e6a2e255ba33abc3'
 const STORAGE_KEY = 'pdapp_gate'
 
 async function sha256Hex(text: string): Promise<string> {
