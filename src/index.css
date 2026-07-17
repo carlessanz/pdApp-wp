@@ -291,7 +291,8 @@ body {
 }
 
 .producers-card {
-  width: min(760px, 100%);
+  width: 80%;
+  max-width: 1100px;
   height: fit-content;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -323,6 +324,14 @@ body {
   padding: 0.65rem 0.75rem;
   text-align: left;
   border-bottom: 1px solid var(--border);
+  word-break: break-word;
+}
+
+/* Teléfono y botón de acción sin saltos de línea */
+.producers-table th:nth-child(3),
+.producers-table td:nth-child(3),
+.producers-table th:last-child,
+.producers-table td:last-child {
   white-space: nowrap;
 }
 
@@ -339,6 +348,29 @@ body {
 
 .producers-table td:last-child {
   text-align: right;
+}
+
+@media (max-width: 720px) {
+  .producers {
+    padding: 1rem 0;
+  }
+
+  .producers-card {
+    width: 94%;
+    padding: 1rem;
+  }
+
+  .producers-table th,
+  .producers-table td {
+    padding: 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  .unanswered-badge {
+    display: block;
+    width: fit-content;
+    margin: 0.25rem 0 0;
+  }
 }
 
 .unanswered-badge {
