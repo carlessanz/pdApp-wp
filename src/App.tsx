@@ -73,7 +73,8 @@ export default function App() {
       ) : (
         <div className="app">
           <ContactList
-            contacts={contacts}
+            contacts={contacts.filter((c) => c.phone === selectedPhone)}
+            single
             loading={loadingContacts}
             error={contactsError}
             selectedPhone={selectedPhone}

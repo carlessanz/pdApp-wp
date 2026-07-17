@@ -11,6 +11,8 @@ interface Props {
   onSelect: (phone: string) => void
   onReload: () => void
   onBack: () => void
+  /** Modo conversación única (desde Productores): oculta el alta manual de contactos */
+  single?: boolean
 }
 
 // E.164 sin el símbolo +: solo dígitos, ej. 34612345678
@@ -24,6 +26,7 @@ export default function ContactList({
   onSelect,
   onReload,
   onBack,
+  single = false,
 }: Props) {
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
@@ -71,19 +74,21 @@ export default function ContactList({
       </div>
       <header className="sidebar-header">
         <h1>PDApp</h1>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => {
-            setShowForm((v) => !v)
-            setFormError(null)
-          }}
-        >
-          {showForm ? 'Cancelar' : 'Añadir contacto'}
-        </button>
+        {!single && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setShowForm((v) => !v)
+              setFormError(null)
+            }}
+          >
+            {showForm ? 'Cancelar' : 'Añadir contacto'}
+          </button>
+        )}
       </header>
 
-      {showForm && (
+      {!single && showForm && (
         <form className="contact-form" onSubmit={handleSubmit}>
           <input
             type="text"
@@ -118,7 +123,9 @@ export default function ContactList({
           </div>
         )}
         {!loading && !error && contacts.length === 0 && (
-          <p className="hint">No hay contactos todavía. Añade el primero.</p>
+          <p className="hint">
+            {single ? 'Cargando la conversación…' : 'No hay contactos todavía. Añade el primero.'}
+          </p>
         )}
         {contacts.map((contact) => (
           <button
