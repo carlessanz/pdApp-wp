@@ -50,6 +50,13 @@ export default function App() {
         { onConflict: 'phone', ignoreDuplicates: true },
       )
       if (error) console.error('wa_contacts upsert:', error.message)
+      // Si el contacto ya existía (p. ej. creado por el webhook al recibir un mensaje),
+      // sincronizar el nombre desde la tabla de productores sin tocar su consentimiento.
+      const { error: nameError } = await supabase
+        .from('wa_contacts')
+        .update({ name: productor.name })
+        .eq('phone', productor.phone)
+      if (nameError) console.error('wa_contacts nombre:', nameError.message)
       await loadContacts()
       setSelectedPhone(productor.phone)
       setView('mensajeria')
