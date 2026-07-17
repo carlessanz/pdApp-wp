@@ -1,0 +1,16 @@
+# Dependencias y build
+node_modules/
+dist/
+
+# Variables de entorno locales (contienen claves)
+.env.local
+.env.*.local
+
+# Supabase CLI
+supabase/.temp/
+
+# Sistema / editor
+.DS_Store
+*.log
+.vercel
+.env*
