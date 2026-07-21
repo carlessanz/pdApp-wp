@@ -188,7 +188,7 @@ Los datos maestros entran por **dos vías distintas, y la diferencia importa**:
 | Qué | Cómo | Por qué |
 | --- | --- | --- |
 | Catálogos (`productos`, `causas`, `factores_conversion`) | Migración `20260721120300_seed_catalogos.sql` | Son configuración, no llevan datos personales: pueden vivir en git y deben existir en todos los entornos |
-| `productores` y `entidades` | `scripts/import-ara.ts` | Llevan nombre, NIF, teléfono, email y dirección: **nunca** se versionan y hoy solo se importan en local (§9) |
+| `productores` y `entidades` | `scripts/import-ara.ts` | Llevan nombre, NIF, teléfono, email y dirección: los CSV **nunca** se versionan (§9) |
 
 Para **regenerar el seed de catálogos** tras reexportar los CSV: el fichero se generó
 leyendo `scripts/data/{causas,productos,factores_conversion}.csv`, normalizando las familias
@@ -349,8 +349,10 @@ Requisito explícito mientras estemos en pruebas. Se cumple así:
   cualquiera podría registrarse y **leer toda la base**, porque las políticas dan
   acceso a cualquier usuario autenticado. No hay todavía roles ni permisos por
   persona.
-- Los datos personales (452 fichas) **siguen solo en local**. El esquema remoto
-  está desplegado y protegido, pero el import contra remoto no se ha ejecutado.
+- Los datos personales **ya están en remoto**: 341 productores y 111 entidades, importados
+  el 21-07-2026. Lo único que los protege es la autenticación de arriba; verificado que con
+  la publishable key las tablas responden `42501`. Dar de alta una cuenta equivale a dar
+  acceso a las 452 fichas completas.
 - La app de Vercel tiene además Deployment Protection (SSO), que es una capa de
   plataforma independiente de todo lo anterior.
 
