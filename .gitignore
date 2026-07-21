@@ -5,6 +5,9 @@ dist/
 # Variables de entorno locales (contienen claves)
 .env.local
 .env.*.local
+# La guía técnica usa este fichero para subir los secretos a Supabase de una vez.
+# OJO: la regla .env* de más abajo NO lo cubre, porque empieza por ".secrets".
+.secrets.env
 
 # Supabase CLI
 supabase/.temp/
