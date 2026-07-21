@@ -1,0 +1,25 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@std/csv@1": "1.0.6"
+  },
+  "jsr": {
+    "@std/csv@1.0.6": {
+      "integrity": "52ef0e62799a0028d278fa04762f17f9bd263fad9a8e7f98c14fbd371d62d9fd"
+    }
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@supabase/supabase-js@2",
+        "npm:@types/react-dom@^19.1.0",
+        "npm:@types/react@^19.1.0",
+        "npm:@vitejs/plugin-react@5",
+        "npm:react-dom@^19.1.0",
+        "npm:react@^19.1.0",
+        "npm:typescript@5.9",
+        "npm:vite@7"
+      ]
+    }
+  }
+}

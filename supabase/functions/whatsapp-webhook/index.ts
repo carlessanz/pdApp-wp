@@ -8,6 +8,58 @@ import { createClient } from "@supabase/supabase-js";
 
 const encoder = new TextEncoder();
 
+// La versión de la Graph API se parametriza: cuando Meta retire la actual
+// se cambia el secreto, no el código.
+const API_VERSION = Deno.env.get("WHATSAPP_API_VERSION") ?? "v23.0";
+
+// Envía un texto por la Graph API. Solo se usa para las confirmaciones de
+// ALTA/BAJA, que siempre ocurren dentro de la ventana de servicio (el contacto
+// acaba de escribirnos), así que no necesitan plantilla ni opt-in.
+async function sendText(to: string, body: string): Promise<string | null> {
+  const phoneId = Deno.env.get("WHATSAPP_PHONE_ID");
+  const res = await fetch(
+    `https://graph.facebook.com/${API_VERSION}/${phoneId}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${Deno.env.get("WHATSAPP_TOKEN")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: { body },
+      }),
+    },
+  );
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error("sendText:", JSON.stringify(data));
+    return null;
+  }
+  return data?.messages?.[0]?.id ?? null;
+}
+
+// Envía una confirmación al contacto y la deja registrada como saliente,
+// para que aparezca en la conversación de la consola igual que el resto.
+// deno-lint-ignore no-explicit-any
+async function confirm(supabase: any, to: string, body: string): Promise<void> {
+  const waMessageId = await sendText(to, body);
+  const { error } = await supabase.from("wa_messages").upsert(
+    {
+      wa_message_id: waMessageId,
+      contact_phone: to,
+      direction: "outbound",
+      type: "text",
+      body,
+      status: "sent",
+    },
+    { onConflict: "wa_message_id", ignoreDuplicates: true },
+  );
+  if (error) console.error("confirmación outbound:", error.message);
+}
+
 // Valida X-Hub-Signature-256: HMAC-SHA256 del cuerpo CRUDO con WHATSAPP_APP_SECRET.
 async function verifySignature(
   rawBody: string,
@@ -96,18 +148,32 @@ Deno.serve(async (req) => {
             );
           if (contactError) console.error("wa_contacts upsert:", contactError.message);
 
-          const { error: messageError } = await supabase.from("wa_messages").insert({
-            wa_message_id: message.id,
-            contact_phone: from,
-            direction: "inbound",
-            type: message.type ?? null,
-            body,
-            status: "received",
-            raw: message,
-          });
-          if (messageError) console.error("wa_messages insert:", messageError.message);
+          // Upsert, no insert: Meta reintenta las entregas y el mismo wa_message_id
+          // puede llegar más de una vez (índice único parcial en wa_message_id).
+          const { error: messageError } = await supabase.from("wa_messages").upsert(
+            {
+              wa_message_id: message.id,
+              contact_phone: from,
+              direction: "inbound",
+              type: message.type ?? null,
+              body,
+              status: "received",
+              raw: message,
+            },
+            { onConflict: "wa_message_id", ignoreDuplicates: true },
+          );
+          if (messageError) console.error("wa_messages upsert:", messageError.message);
 
-          // Palabras clave de opt-in / opt-out
+          // Abre/renueva la ventana de servicio de 24 h para este contacto.
+          const { error: windowError } = await supabase
+            .from("wa_contacts")
+            .update({ last_inbound_at: new Date().toISOString() })
+            .eq("phone", from);
+          if (windowError) console.error("last_inbound_at update:", windowError.message);
+
+          // Palabras clave de opt-in / opt-out. Ambas se confirman por mensaje:
+          // estamos dentro de la ventana de servicio, así que es gratis y no
+          // requiere plantilla.
           const keyword = body?.trim().toUpperCase();
           if (keyword === "BAJA") {
             const { error } = await supabase
@@ -115,12 +181,23 @@ Deno.serve(async (req) => {
               .update({ opt_in: false, opt_out_at: new Date().toISOString() })
               .eq("phone", from);
             if (error) console.error("opt-out update:", error.message);
+            await confirm(
+              supabase,
+              from,
+              "Has estat donat de baixa de les notificacions. " +
+                "Escriu ALTA si vols tornar a rebre-les.",
+            );
           } else if (keyword === "ALTA") {
             const { error } = await supabase
               .from("wa_contacts")
               .update({ opt_in: true, opt_in_at: new Date().toISOString() })
               .eq("phone", from);
             if (error) console.error("opt-in update:", error.message);
+            await confirm(
+              supabase,
+              from,
+              "Alta confirmada. Escriu BAJA per deixar de rebre notificacions.",
+            );
           }
         }
 

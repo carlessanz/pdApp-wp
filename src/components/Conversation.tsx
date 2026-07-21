@@ -16,7 +16,36 @@ interface Notice {
 // Traduce la respuesta de error (de la Edge Function o de la Graph API) a un aviso legible.
 // El código 131047 de Meta es el de re-engagement: fuera de la ventana de 24 horas.
 function noticeFromError(data: unknown): Notice {
-  const err = (data as { error?: unknown } | null)?.error
+  const payload = data as { error?: unknown; code?: string } | null
+  const err = payload?.error
+
+  // Códigos propios de whatsapp-send (reglas de envío y autorización).
+  switch (payload?.code) {
+    case 'window_closed':
+      return {
+        kind: 'warning',
+        text:
+          'Fuera de la ventana de 24 horas: WhatsApp solo permite texto libre después de que ' +
+          'el contacto haya escrito. Inicia la conversación con la plantilla o espera su respuesta.',
+      }
+    case 'no_opt_in':
+      return {
+        kind: 'warning',
+        text:
+          'Este contacto no ha dado su consentimiento (opt-in), así que no se le puede enviar ' +
+          'una plantilla. Puede darlo escribiendo ALTA por WhatsApp.',
+      }
+    case 'unknown_contact':
+      return { kind: 'error', text: 'El contacto no existe todavía en la base de datos.' }
+    case 'unauthorized':
+      return {
+        kind: 'error',
+        text:
+          'La consola no está autorizada a enviar. Revisa que VITE_WA_SEND_API_KEY en .env.local ' +
+          'coincida con el secreto WHATSAPP_SEND_API_KEY y reinicia el servidor de Vite.',
+      }
+  }
+
   if (typeof err === 'string') {
     return { kind: 'error', text: err }
   }

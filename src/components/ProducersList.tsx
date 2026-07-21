@@ -93,6 +93,7 @@ export default function ProducersList({ onSendMessage }: Props) {
   }, [])
 
   async function handleSend(productor: Productor) {
+    if (!productor.phone) return
     setOpeningPhone(productor.phone)
     await onSendMessage(productor)
   }
@@ -121,30 +122,42 @@ export default function ProducersList({ onSendMessage }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {producers.map((productor) => (
-                  <tr key={productor.id}>
-                    <td>
-                      {productor.name}
-                      {(unanswered[productor.phone] ?? 0) > 0 && (
-                        <span className="unanswered-badge">
-                          {unanswered[productor.phone]} sin contestar
-                        </span>
-                      )}
-                    </td>
-                    <td>{productor.email ?? '—'}</td>
-                    <td>+{productor.phone}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => handleSend(productor)}
-                        disabled={openingPhone !== null}
-                      >
-                        {openingPhone === productor.phone ? 'Abriendo…' : 'Enviar mensaje'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {producers.map((productor) => {
+                  // Muchos productores del Excel no tienen móvil utilizable:
+                  // sin él no se les puede escribir por WhatsApp.
+                  const sinContestar = productor.phone
+                    ? (unanswered[productor.phone] ?? 0)
+                    : 0
+                  return (
+                    <tr key={productor.id}>
+                      <td>
+                        {productor.name}
+                        {sinContestar > 0 && (
+                          <span className="unanswered-badge">
+                            {sinContestar} sin contestar
+                          </span>
+                        )}
+                      </td>
+                      <td>{productor.email ?? '—'}</td>
+                      <td>{productor.phone ? `+${productor.phone}` : '—'}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => handleSend(productor)}
+                          disabled={openingPhone !== null || !productor.phone}
+                          title={
+                            productor.phone
+                              ? undefined
+                              : 'Sin teléfono móvil registrado: no se le puede escribir por WhatsApp'
+                          }
+                        >
+                          {openingPhone === productor.phone ? 'Abriendo…' : 'Enviar mensaje'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

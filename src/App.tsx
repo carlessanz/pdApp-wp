@@ -40,6 +40,9 @@ export default function App() {
   // de WhatsApp (con opt-in, como el flujo "Añadir contacto") sin tocar los existentes.
   const openMessagingWith = useCallback(
     async (productor: Productor) => {
+      // Hay productores importados sin móvil utilizable; la lista ya deshabilita
+      // el botón, esto es la red de seguridad.
+      if (!productor.phone) return
       const { error } = await supabase.from('wa_contacts').upsert(
         {
           phone: productor.phone,

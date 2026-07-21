@@ -1,5 +1,9 @@
 import { publishableKey, supabaseUrl } from './supabase'
 
+// Clave provisional que exige la Edge Function whatsapp-send mientras no haya login.
+// TODO producción: sustituir por el JWT de sesión de Supabase Auth.
+const sendApiKey = import.meta.env.VITE_WA_SEND_API_KEY as string | undefined
+
 export type SendPayload =
   | { to: string; type: 'text'; body: string }
   | {
@@ -24,6 +28,7 @@ export async function sendWhatsApp(payload: SendPayload): Promise<SendResult> {
       headers: {
         Authorization: `Bearer ${publishableKey}`,
         'Content-Type': 'application/json',
+        'x-api-key': sendApiKey ?? '',
       },
       body: JSON.stringify(payload),
     })
