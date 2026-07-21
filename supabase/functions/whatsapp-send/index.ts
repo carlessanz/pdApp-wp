@@ -9,8 +9,7 @@
 
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-
-const API_VERSION = Deno.env.get("WHATSAPP_API_VERSION") ?? "v23.0";
+import { sendText, sendTemplate } from "../_shared/whatsapp.ts";
 
 // CORS restringido a los orígenes del panel; ya no '*'.
 // ALLOWED_ORIGIN admite varios separados por comas y '*' como comodín dentro de
@@ -149,57 +148,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Cuerpo para la Graph API según el tipo de mensaje
-    const metaBody: Record<string, unknown> = {
-      messaging_product: "whatsapp",
-      to,
-      type,
-    };
-    if (type === "text") {
-      metaBody.text = { body: input.body };
-    } else {
-      metaBody.template = {
-        name: input.template,
-        language: { code: input.language ?? "en_US" },
-        components: input.components ?? [],
-      };
-    }
+    // La llamada a Meta y el registro del saliente viven en _shared/whatsapp.ts,
+    // compartidos con el webhook. Aquí solo quedan las reglas de negocio.
+    const r = type === "text"
+      ? await sendText(supabase, to, input.body)
+      : await sendTemplate(
+        supabase,
+        to,
+        input.template,
+        input.language ?? "en_US",
+        input.components ?? [],
+      );
 
-    const phoneId = Deno.env.get("WHATSAPP_PHONE_ID");
-    const metaResponse = await fetch(
-      `https://graph.facebook.com/${API_VERSION}/${phoneId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("WHATSAPP_TOKEN")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(metaBody),
-      },
-    );
+    // Si Meta devuelve error, reenviarlo tal cual al cliente para depurar.
+    if (!r.ok) return responder(r.data, r.status);
 
-    const metaData = await metaResponse.json();
-
-    // Si Meta devuelve error, reenviarlo tal cual al cliente para depurar
-    if (!metaResponse.ok) {
-      return responder(metaData, metaResponse.status);
-    }
-
-    const { error: insertError } = await supabase.from("wa_messages").upsert(
-      {
-        wa_message_id: metaData.messages?.[0]?.id ?? null,
-        contact_phone: to,
-        direction: "outbound",
-        type,
-        body: type === "text" ? input.body : input.template,
-        status: "sent",
-        raw: metaData,
-      },
-      { onConflict: "wa_message_id", ignoreDuplicates: true },
-    );
-    if (insertError) console.error("wa_messages upsert:", insertError.message);
-
-    return responder(metaData, 200);
+    return responder(r.data, 200);
   } catch (err) {
     console.error(
       "Error en whatsapp-send:",

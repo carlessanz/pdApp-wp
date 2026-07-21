@@ -1,0 +1,171 @@
+// Envío de mensajes por la Cloud API de Meta, compartido entre las Edge Functions.
+//
+// Aquí solo vive la llamada a la Graph API y el registro del saliente. Las reglas
+// de negocio (ventana de 24 h, opt-in) son de quien llama: `whatsapp-send` las
+// aplica antes, y el intake del webhook trabaja siempre dentro de la ventana
+// porque responde a un mensaje que acaba de llegar.
+
+const API_VERSION = Deno.env.get("WHATSAPP_API_VERSION") ?? "v23.0";
+
+// WhatsApp acepta como máximo 3 botones y 10 filas por lista interactiva.
+export const MAX_BOTONES = 3;
+export const MAX_FILAS_LISTA = 10;
+
+export interface Boton {
+  id: string;
+  titulo: string;
+}
+
+export interface FilaLista {
+  id: string;
+  titulo: string;
+  descripcion?: string;
+}
+
+export interface RespuestaMeta {
+  ok: boolean;
+  /** Código HTTP de Meta, para poder reenviarlo tal cual al cliente. */
+  status: number;
+  waMessageId: string | null;
+  data: unknown;
+}
+
+async function enviar(payload: Record<string, unknown>): Promise<RespuestaMeta> {
+  const phoneId = Deno.env.get("WHATSAPP_PHONE_ID");
+  const res = await fetch(
+    `https://graph.facebook.com/${API_VERSION}/${phoneId}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${Deno.env.get("WHATSAPP_TOKEN")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ messaging_product: "whatsapp", ...payload }),
+    },
+  );
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error("Graph API:", JSON.stringify(data));
+    return { ok: false, status: res.status, waMessageId: null, data };
+  }
+  return {
+    ok: true,
+    status: res.status,
+    // deno-lint-ignore no-explicit-any
+    waMessageId: (data as any)?.messages?.[0]?.id ?? null,
+    data,
+  };
+}
+
+/** Deja constancia del saliente para que aparezca en la conversación de la consola. */
+export async function registrarSaliente(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  to: string,
+  tipo: string,
+  body: string | null,
+  waMessageId: string | null,
+  raw?: unknown,
+): Promise<void> {
+  const { error } = await supabase.from("wa_messages").upsert(
+    {
+      wa_message_id: waMessageId,
+      contact_phone: to,
+      direction: "outbound",
+      type: tipo,
+      body,
+      status: "sent",
+      ...(raw === undefined ? {} : { raw }),
+    },
+    { onConflict: "wa_message_id", ignoreDuplicates: true },
+  );
+  if (error) console.error("registrarSaliente:", error.message);
+}
+
+export async function sendText(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  to: string,
+  body: string,
+): Promise<RespuestaMeta> {
+  const r = await enviar({ to, type: "text", text: { body, preview_url: false } });
+  if (r.ok) await registrarSaliente(supabase, to, "text", body, r.waMessageId, r.data);
+  return r;
+}
+
+export async function sendTemplate(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  to: string,
+  nombre: string,
+  idioma: string,
+  components: unknown[] = [],
+): Promise<RespuestaMeta> {
+  const r = await enviar({
+    to,
+    type: "template",
+    template: { name: nombre, language: { code: idioma }, components },
+  });
+  if (r.ok) await registrarSaliente(supabase, to, "template", nombre, r.waMessageId, r.data);
+  return r;
+}
+
+/** Pregunta con hasta 3 botones. */
+export async function sendBotones(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  to: string,
+  texto: string,
+  botones: Boton[],
+): Promise<RespuestaMeta> {
+  const r = await enviar({
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: texto },
+      action: {
+        buttons: botones.slice(0, MAX_BOTONES).map((b) => ({
+          type: "reply",
+          // Meta limita el título del botón a 20 caracteres.
+          reply: { id: b.id, title: b.titulo.slice(0, 20) },
+        })),
+      },
+    },
+  });
+  if (r.ok) await registrarSaliente(supabase, to, "interactive", texto, r.waMessageId);
+  return r;
+}
+
+/** Pregunta con lista desplegable, hasta 10 filas. */
+export async function sendLista(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  to: string,
+  texto: string,
+  etiquetaBoton: string,
+  filas: FilaLista[],
+): Promise<RespuestaMeta> {
+  const r = await enviar({
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: texto },
+      action: {
+        // El botón que abre la lista admite 20 caracteres.
+        button: etiquetaBoton.slice(0, 20),
+        sections: [{
+          rows: filas.slice(0, MAX_FILAS_LISTA).map((f) => ({
+            id: f.id,
+            // Meta limita el título de fila a 24 caracteres y la descripción a 72.
+            title: f.titulo.slice(0, 24),
+            ...(f.descripcion ? { description: f.descripcion.slice(0, 72) } : {}),
+          })),
+        }],
+      },
+    },
+  });
+  if (r.ok) await registrarSaliente(supabase, to, "interactive", texto, r.waMessageId);
+  return r;
+}

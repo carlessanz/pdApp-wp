@@ -22,7 +22,7 @@ Dos fases:
 | Fase | Qué es | Estado |
 | --- | --- | --- |
 | **1. Infraestructura WhatsApp** | Consola de mensajería: webhook con firma, envío texto/plantilla, opt-in, Realtime | ✅ construida y endurecida |
-| **2. POMA** | Intake conversacional, excedentes/canalizaciones, priorización, cierre | 🔧 modelo de datos e importación hechos; lógica pendiente |
+| **2. POMA** | Intake conversacional, excedentes/canalizaciones, priorización, cierre | 🔧 datos e **intake conversacional** hechos; faltan priorización, panel y envío a entidades |
 
 Actualmente en **entorno de pruebas** de Meta (número de test, máximo 5 destinatarios).
 
@@ -71,11 +71,14 @@ scripts/
   crear-usuario.ts             Alta de cuentas por la Admin API (no envía correos)
   data/                        Los CSV — IGNORADO POR GIT (datos personales, §7)
 supabase/
-  config.toml                  Config del CLI (project_id: pdApp-wp)
+  config.toml                  Config del CLI (puertos 553xx, ver §7)
   migrations/*.sql             Migraciones versionadas
   functions/
-    whatsapp-send/index.ts     POST: envía a la Graph API
-    whatsapp-webhook/index.ts  GET verificación / POST recepción de Meta
+    _shared/whatsapp.ts        Llamadas a la Graph API: texto, plantilla, botones, listas
+    _shared/intake.ts          Motor conversacional (máquina de estados)
+    _shared/oferta.ts          id_excedente + texto "OFERTA DISPONIBLE"
+    whatsapp-send/index.ts     POST: reglas de envío; delega en _shared
+    whatsapp-webhook/index.ts  GET verificación / POST recepción; engancha el intake
 docs/                          Material de trabajo local — IGNORADO POR GIT (§7)
   nuevas-funcionalidades/      Specs POMA, manuales y CSV de origen
 ```
@@ -169,6 +172,12 @@ no reintente.
 `opt_in_at`. **Ambas responden confirmación** por WhatsApp (estamos en ventana, es gratis) y
 se registran como `outbound`.
 
+**Intake conversacional** — un productor escribe → el webhook lo identifica por `phone` en
+`productores` → `procesarIntake()` (`_shared/intake.ts`). El estado vive en
+`intake_sessions` (una fila por teléfono) y cada mensaje se interpreta según `paso_actual`.
+Al completarse, `crearExcedenteDesdeSesion()` da de alta el excedente y avisa al productor.
+Detalle en §6bis.
+
 **"Sin contestar"** — `countUnanswered()` en `ProducersList`: mensajes `inbound` posteriores
 al último `outbound` de ese teléfono.
 
@@ -217,6 +226,43 @@ Peculiaridades verificadas de los datos, todas manejadas por el script:
 - Solo 12 productores tienen par de coordenadas numérico → se crean ~12 ubicaciones.
 - `productos_habituales` queda **vacío**: la columna Producte no existe en este export.
   Reimportar cuando se reexporte el Excel ARA con esa columna.
+
+## 6bis. El intake conversacional
+
+Trece pasos: `familia` → `producte` → `varietat` → `kg` → `caixes` → `tipus_caixa` →
+`retorn` → `ubicacio` → `disponible_fins` → `horari` → `modalitat` → `causa` →
+`observacions`. Las opciones salen **siempre de las tablas** (`productos`, `causas`), nunca
+escritas a mano.
+
+**Arranca preguntando, no con el cuestionario.** Ante un mensaje que no sea ALTA/BAJA de un
+productor sin sesión abierta, POMA responde *"Hola X! Vols oferir un excedent?"* con botones.
+Es una desviación deliberada del POMA §8, que hacía que *cualquier* mensaje lanzara el
+formulario: con 271 productores escribiendo por cualquier motivo, eso secuestra
+conversaciones normales.
+
+**La paginación es el caso normal.** Las listas de WhatsApp admiten 10 filas: se muestran 9
+opciones y la décima es "Més…". Hace falta porque hay **12 familias** y cuatro superan los
+10 productos (Horta Tub/Bul/Arr 16, Fruita Dolça 14, Horta Fruit 14, Horta Fulla 12).
+
+**Casos que el motor ya contempla:**
+
+- Respuesta que no encaja: se repite la pregunta, máximo 2 veces, y luego se ofrece cancelar.
+- `CANCEL·LAR` / `CANCELAR` descarta la sesión en cualquier momento.
+- Sesión inactiva más de 12 h: se descarta y se empieza de cero.
+- Productor **sin ubicaciones** (329 de 341): no se puede enviar una lista vacía, así que se
+  pide el enlace de Google Maps por texto. El enlace crea una `productor_ubicaciones` que
+  hereda el municipio de la ficha.
+- Cantidad en unidades o manats: se convierte con `factores_conversion` si hay factor.
+
+**Identificador**: `E-AAMMDD-XXX-YYY-N` (3 letras del productor, 3 del producto, N = orden
+del día). Ejemplo real: `E-260721-CAR-TOM-1`.
+
+**Textos que se publican** — reproducen los que el equipo escribe hoy a mano, emojis
+incluidos. `componerTextoOferta()` en `_shared/oferta.ts` genera "OFERTA DISPONIBLE"
+(PRODUCTE, PRODUCTOR, MUNICIPI, UBICACIÓ, QUANTITAT, DISPONIBLE, HORARI RECOLLIDA,
+MODALITAT, CAUSA, ENVASOS, RESPONSABLE, OBSERVACIONS). Queda pendiente el de "RECOLLIDA
+CONFIRMADA" (🚚 con SDA/ENTITAT, DATA i HORA, KG RECOLLITS, KG FALTEN RECOLLIR, Comentaris),
+que corresponde al momento de cierre y todavía no está implementado.
 
 ## 7. Convenciones
 
@@ -354,6 +400,12 @@ deno run -A scripts/import-ara.ts             # importar los CSV maestros
 
 1. **Sin tests, sin linter, sin CI.** La única red de seguridad es `tsc`.
 2. No hay roles: cualquier usuario autenticado lo ve y lo puede todo.
+3. El intake avanza de paso aunque falle el envío a Meta: si la red falla, el productor no
+   recibe la pregunta pero la sesión ya ha avanzado y su siguiente mensaje se interpretará
+   como respuesta al paso nuevo.
+4. `disponible_hasta` se guarda como `null`: el productor responde en texto libre
+   ("23/07", "la setmana que ve") y todavía no se normaliza a fecha.
+5. El `responsable` del excedente queda vacío: se asigna desde el panel, que no existe aún.
 3. `ProducersList` carga **todos** los `wa_messages` sin filtro ni paginación para contar los
    no contestados, y se suscribe a Realtime sin filtro. No escala.
 4. `Conversation` carga el hilo completo sin paginación.

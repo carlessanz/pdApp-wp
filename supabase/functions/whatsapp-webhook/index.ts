@@ -5,60 +5,10 @@
 
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import { sendText } from "../_shared/whatsapp.ts";
+import { leerRespuesta, procesarIntake } from "../_shared/intake.ts";
 
 const encoder = new TextEncoder();
-
-// La versión de la Graph API se parametriza: cuando Meta retire la actual
-// se cambia el secreto, no el código.
-const API_VERSION = Deno.env.get("WHATSAPP_API_VERSION") ?? "v23.0";
-
-// Envía un texto por la Graph API. Solo se usa para las confirmaciones de
-// ALTA/BAJA, que siempre ocurren dentro de la ventana de servicio (el contacto
-// acaba de escribirnos), así que no necesitan plantilla ni opt-in.
-async function sendText(to: string, body: string): Promise<string | null> {
-  const phoneId = Deno.env.get("WHATSAPP_PHONE_ID");
-  const res = await fetch(
-    `https://graph.facebook.com/${API_VERSION}/${phoneId}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${Deno.env.get("WHATSAPP_TOKEN")}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to,
-        type: "text",
-        text: { body },
-      }),
-    },
-  );
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    console.error("sendText:", JSON.stringify(data));
-    return null;
-  }
-  return data?.messages?.[0]?.id ?? null;
-}
-
-// Envía una confirmación al contacto y la deja registrada como saliente,
-// para que aparezca en la conversación de la consola igual que el resto.
-// deno-lint-ignore no-explicit-any
-async function confirm(supabase: any, to: string, body: string): Promise<void> {
-  const waMessageId = await sendText(to, body);
-  const { error } = await supabase.from("wa_messages").upsert(
-    {
-      wa_message_id: waMessageId,
-      contact_phone: to,
-      direction: "outbound",
-      type: "text",
-      body,
-      status: "sent",
-    },
-    { onConflict: "wa_message_id", ignoreDuplicates: true },
-  );
-  if (error) console.error("confirmación outbound:", error.message);
-}
 
 // Valida X-Hub-Signature-256: HMAC-SHA256 del cuerpo CRUDO con WHATSAPP_APP_SECRET.
 async function verifySignature(
@@ -136,8 +86,9 @@ Deno.serve(async (req) => {
         // Mensajes entrantes
         for (const message of value.messages ?? []) {
           const from: string = message.from;
-          const body: string | null =
-            message.type === "text" ? (message.text?.body ?? null) : null;
+          // El cuerpo legible: el texto, o el título de la opción pulsada si la
+          // respuesta es interactiva (botón o lista del intake).
+          const { texto: cuerpo } = leerRespuesta(message);
 
           // Crear el contacto si no existe (sin tocar los existentes)
           const { error: contactError } = await supabase
@@ -149,14 +100,14 @@ Deno.serve(async (req) => {
           if (contactError) console.error("wa_contacts upsert:", contactError.message);
 
           // Upsert, no insert: Meta reintenta las entregas y el mismo wa_message_id
-          // puede llegar más de una vez (índice único parcial en wa_message_id).
+          // puede llegar más de una vez (índice único en wa_message_id).
           const { error: messageError } = await supabase.from("wa_messages").upsert(
             {
               wa_message_id: message.id,
               contact_phone: from,
               direction: "inbound",
               type: message.type ?? null,
-              body,
+              body: cuerpo,
               status: "received",
               raw: message,
             },
@@ -174,29 +125,44 @@ Deno.serve(async (req) => {
           // Palabras clave de opt-in / opt-out. Ambas se confirman por mensaje:
           // estamos dentro de la ventana de servicio, así que es gratis y no
           // requiere plantilla.
-          const keyword = body?.trim().toUpperCase();
+          const keyword = cuerpo?.trim().toUpperCase();
           if (keyword === "BAJA") {
             const { error } = await supabase
               .from("wa_contacts")
               .update({ opt_in: false, opt_out_at: new Date().toISOString() })
               .eq("phone", from);
             if (error) console.error("opt-out update:", error.message);
-            await confirm(
+            await sendText(
               supabase,
               from,
               "Has estat donat de baixa de les notificacions. " +
                 "Escriu ALTA si vols tornar a rebre-les.",
             );
-          } else if (keyword === "ALTA") {
+            continue;
+          }
+          if (keyword === "ALTA") {
             const { error } = await supabase
               .from("wa_contacts")
               .update({ opt_in: true, opt_in_at: new Date().toISOString() })
               .eq("phone", from);
             if (error) console.error("opt-in update:", error.message);
-            await confirm(
+            await sendText(
               supabase,
               from,
               "Alta confirmada. Escriu BAJA per deixar de rebre notificacions.",
+            );
+            continue;
+          }
+
+          // Intake conversacional: solo responde si el teléfono es de un
+          // productor registrado. Con cualquier otro contacto no hace nada y el
+          // mensaje se queda en la consola para que lo atienda una persona.
+          try {
+            await procesarIntake(supabase, from, message);
+          } catch (err) {
+            console.error(
+              "intake:",
+              err instanceof Error ? err.message : String(err),
             );
           }
         }
