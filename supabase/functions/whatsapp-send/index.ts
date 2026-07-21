@@ -3,9 +3,9 @@
 //   { "to": "34...", "type": "text", "body": "Hola" }
 //   { "to": "34...", "type": "template", "template": "hello_world", "language": "en_US", "components": [] }
 //
-// Requiere la cabecera x-api-key (WHATSAPP_SEND_API_KEY).
-// TODO producción: sustituir la x-api-key por Supabase Auth (verify_jwt) y quitar
-// el --no-verify-jwt del despliegue.
+// Requiere una sesión de Supabase Auth: se despliega SIN --no-verify-jwt, así que
+// la plataforma valida la firma del JWT, y además aquí se comprueba que
+// corresponde a un usuario real.
 
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
@@ -42,7 +42,7 @@ function corsPara(req: Request): Record<string, string> {
     "Access-Control-Allow-Origin": originPermitido(origin) ? origin : ALLOWED_ORIGINS[0],
     "Vary": "Origin",
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type, x-api-key",
+      "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
   };
 }
@@ -55,16 +55,6 @@ function json(body: unknown, status = 200, cors: Record<string, string> = {}): R
     status,
     headers: { ...cors, "Content-Type": "application/json" },
   });
-}
-
-// Comparación en tiempo constante, igual que la de la firma en whatsapp-webhook.
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
 }
 
 Deno.serve(async (req) => {
@@ -80,10 +70,21 @@ Deno.serve(async (req) => {
     return responder({ error: "Method Not Allowed" }, 405);
   }
 
-  const apiKey = Deno.env.get("WHATSAPP_SEND_API_KEY") ?? "";
-  const provided = req.headers.get("x-api-key") ?? "";
-  if (!apiKey || !timingSafeEqual(provided, apiKey)) {
-    return responder({ error: "No autorizado", code: "unauthorized" }, 401);
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SB_SECRET_KEY")!,
+  );
+
+  // La plataforma ya ha validado la firma del JWT (verify_jwt). Aquí se
+  // comprueba que detrás hay un usuario de verdad: la publishable key no es un
+  // JWT, así que una petición sin sesión no llega ni a este punto.
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !user) {
+    return responder(
+      { error: "Necesitas iniciar sesión para enviar mensajes", code: "unauthorized" },
+      401,
+    );
   }
 
   try {
@@ -102,11 +103,6 @@ Deno.serve(async (req) => {
     if (type === "template" && (!input.template || typeof input.template !== "string")) {
       return responder({ error: "Falta 'template' para un mensaje de plantilla" }, 400);
     }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SB_SECRET_KEY")!,
-    );
 
     const { data: contact, error: contactError } = await supabase
       .from("wa_contacts")

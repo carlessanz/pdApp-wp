@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import type { Productor, WaContact } from './types'
-import PasswordGate from './components/PasswordGate'
+import AuthGate from './components/AuthGate'
 import ProducersList from './components/ProducersList'
 import ContactList from './components/ContactList'
 import Conversation from './components/Conversation'
@@ -70,7 +70,7 @@ export default function App() {
   const selected = contacts.find((c) => c.phone === selectedPhone) ?? null
 
   return (
-    <PasswordGate>
+    <AuthGate>
       {view === 'productores' ? (
         <ProducersList onSendMessage={openMessagingWith} />
       ) : (
@@ -94,6 +94,6 @@ export default function App() {
           )}
         </div>
       )}
-    </PasswordGate>
+    </AuthGate>
   )
 }

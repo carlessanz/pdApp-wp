@@ -40,9 +40,7 @@ function noticeFromError(data: unknown): Notice {
     case 'unauthorized':
       return {
         kind: 'error',
-        text:
-          'La consola no está autorizada a enviar. Revisa que VITE_WA_SEND_API_KEY en .env.local ' +
-          'coincida con el secreto WHATSAPP_SEND_API_KEY y reinicia el servidor de Vite.',
+        text: 'Tu sesión ha caducado o no tienes permiso. Vuelve a iniciar sesión.',
       }
   }
 

@@ -1,8 +1,4 @@
-import { publishableKey, supabaseUrl } from './supabase'
-
-// Clave provisional que exige la Edge Function whatsapp-send mientras no haya login.
-// TODO producción: sustituir por el JWT de sesión de Supabase Auth.
-const sendApiKey = import.meta.env.VITE_WA_SEND_API_KEY as string | undefined
+import { supabase, supabaseUrl } from './supabase'
 
 export type SendPayload =
   | { to: string; type: 'text'; body: string }
@@ -21,19 +17,33 @@ export interface SendResult {
 }
 
 // Llama a la Edge Function whatsapp-send. Nunca lanza: devuelve el error en `data`.
+// Va firmada con el token de la sesión de Supabase Auth: la función se despliega
+// con verificación de JWT y rechaza cualquier petición sin sesión.
 export async function sendWhatsApp(payload: SendPayload): Promise<SendResult> {
   try {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token
+    if (!token) {
+      return {
+        ok: false,
+        status: 401,
+        data: {
+          code: 'unauthorized',
+          error: 'Tu sesión ha caducado. Vuelve a entrar para enviar mensajes.',
+        },
+      }
+    }
+
     const res = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${publishableKey}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'x-api-key': sendApiKey ?? '',
       },
       body: JSON.stringify(payload),
     })
-    const data: unknown = await res.json().catch(() => null)
-    return { ok: res.ok, status: res.status, data }
+    const body: unknown = await res.json().catch(() => null)
+    return { ok: res.ok, status: res.status, data: body }
   } catch (err) {
     return {
       ok: false,
