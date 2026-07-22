@@ -547,8 +547,10 @@ local. No importa en la práctica: `npm run dev` usa `.env.local`, que apunta a 
   otro valor = simula (`status='simulat'`)
 - `ALLOWED_ORIGIN` — admite **varios orígenes separados por comas** y `*` como comodín
   dentro de un origen, porque los despliegues de Vercel no tienen URL estable. Valor actual:
-  `http://localhost:5173,https://pdapp-*-carlessanz-projects.vercel.app`. Si algún día se le
-  pone un dominio propio a la app, hay que añadirlo aquí o el navegador bloqueará los envíos.
+  `http://localhost:5173,https://pdapp-wp.carlessanz.com,https://pdapp-*-carlessanz-projects.vercel.app`.
+  **La app en producción se sirve desde el dominio propio `https://pdapp-wp.carlessanz.com`**, que
+  hubo que añadir aquí (si no, el navegador bloquea por CORS todas las llamadas a las Edge
+  Functions). Si se cambia/añade dominio, actualizar este secret.
 - `RECORDATORIOS_SECRET` — secreto compartido que valida `intake-recordatorios`; el **mismo**
   valor va en `app_config.recordatorios_secret` para que el job lo pueda enviar (§4, §5). Nunca
   en git.
@@ -556,8 +558,8 @@ local. No importa en la práctica: `npm run dev` usa `.env.local`, que apunta a 
 - `RESEND_FROM` — remitente (`from`) de un dominio **verificado** en Resend. Valor actual:
   `POMA <no-reply@espigoladors.com>`. Ausente = usa `onboarding@resend.dev`, que solo entrega al
   correo owner de la cuenta.
-- `APP_URL` — URL de la app para el `redirectTo` del reset (hoy el branch-alias de Vercel
-  `https://pdapp-wp-git-main-carlessanz-projects.vercel.app`); debe estar en la allow-list de Auth.
+- `APP_URL` — URL de la app para el `redirectTo` del reset (dominio propio
+  `https://pdapp-wp.carlessanz.com`); debe estar en la allow-list de Auth (`uri_allow_list`).
 - `SB_SECRET_KEY` (`sb_secret_...`)
 - `SUPABASE_URL` (la inyecta Supabase automáticamente)
 
