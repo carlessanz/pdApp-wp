@@ -24,8 +24,11 @@ Dos fases:
 | **1. Infraestructura WhatsApp** | Consola de mensajería: webhook con firma, envío texto/plantilla, opt-in, Realtime | ✅ construida y endurecida |
 | **2. POMA** | Intake conversacional, excedentes/canalizaciones, priorización, cierre | ✅ construida (prompts 0bis–8). Quedan checkpoints de negocio, no de código (§12) |
 
-Actualmente en **entorno de pruebas** de Meta y en **modo prueba de concepto**: no se envía
-ninguna notificación real por WhatsApp (interruptor `WHATSAPP_ENVIO_REAL`, §8).
+Actualmente en **entorno de pruebas** de Meta con **`WHATSAPP_ENVIO_REAL` activado**
+(2026-07-22): los envíos salen de verdad, pero Meta en test **solo entrega a los ≤5 números
+verificados** en su panel (reflejados en `meta_test_recipients`, §4); a cualquier otro número
+Meta rechaza con `131030`. La protección real la da, pues, el propio entorno de test de Meta
+más la whitelist `meta_test_recipients`. Ver §8.
 
 **Mensajería siempre individual**, nunca a grupos: la Cloud API no escribe en grupos. Para
 publicar en un grupo se ofrece "copiar texto" y se pega a mano.
@@ -334,9 +337,14 @@ es **genérico**: recibe las definiciones de `src/lib/crudCampos.ts` (`PRODUCTOR
 mensaje» (en listado y ficha) asegura el teléfono como `wa_contact` y abre Mensajería, tanto
 para productores como para entidades.
 
-**Solo los números de la lista Meta pueden recibir.** En el detalle, "Enviar per API" se
+**Solo los números de la lista Meta pueden recibir.** En el detalle, **«Enviar oferta»** se
 habilita únicamente si la entidad tiene `opt_in` **y** su teléfono está en
-`meta_test_recipients`; el servidor lo vuelve a comprobar (§8).
+`meta_test_recipients`; el servidor lo vuelve a comprobar (§8). En el entorno de test ese botón
+envía el **texto de la oferta** (`texto_oferta`) como **texto dentro de la ventana de 24 h** —la
+abre la entidad al escribir al número— porque las plantillas propias (`oferta_excedent`) no son
+usables en el número de test (solo `hello_world`). En producción, con la plantilla aprobada, se
+volvería a enviar como plantilla. Si la entidad no ha escrito aún, el envío responde
+`409 window_closed`/`404 unknown_contact` y se le pide que escriba primero.
 
 **Cancelar / anular una oferta ya creada.** `OfferDetail` ofrece dos acciones de anulación:
 «Marcar como no colocada» (no se encontró destino, exige motivo) y «Cancelar oferta»
@@ -394,15 +402,15 @@ con `disponible_hasta` vencida >24 h y kg sin cubrir. No actúa hasta que el pan
 
 ## 8. Reglas de negocio
 
-> ⚠️ **Modo prueba de concepto: no se envía nada por WhatsApp.** El interruptor
-> **`WHATSAPP_ENVIO_REAL`** (env var) gobierna el único punto que llama a la Graph API
-> (`enviar()` en `_shared/whatsapp.ts`). Solo si vale exactamente `"true"` sale algo; por
-> defecto —y hoy en remoto, donde el secreto no está puesto— **no se contacta con Meta**. Los
-> salientes se registran igual en `wa_messages` con `status='simulat'` (visibles en la consola).
-> Afecta a TODO: intake, recordatorios de intake, confirmaciones ALTA/BAJA y envío de ofertas a
-> entidades. Para activar
-> los envíos reales: `supabase secrets set WHATSAPP_ENVIO_REAL=true` (y en local, en el
-> env-file al servir). El webhook **sigue recibiendo**; solo se corta la salida.
+> ⚠️ **Envío real ACTIVADO en remoto** (`WHATSAPP_ENVIO_REAL=true`, 2026-07-22). El interruptor
+> (env var) gobierna el único punto que llama a la Graph API (`enviar()` en `_shared/whatsapp.ts`):
+> solo si vale exactamente `"true"` sale algo. En remoto ya lo está, así que **sí se contacta con
+> Meta**; en local, sin el secreto, se **simula** (`status='simulat'`). Lo que evita el desastre en
+> remoto es que el número **sigue en el entorno de test de Meta**: Meta solo entrega a los ≤5
+> verificados (los de `meta_test_recipients`); el resto lo rechaza con `131030`. **Aviso: si el
+> número pasa a producción con el interruptor en `true`, enviaría a TODOS** — revisar lista y flujo
+> antes. Afecta a TODO: intake, recordatorios, ALTA/BAJA y ofertas a entidades. Para volver a
+> simular: `supabase secrets set WHATSAPP_ENVIO_REAL=false`. El webhook siempre recibe.
 
 **Reglas de envío** (decisión D1 del manual; implementadas en `whatsapp-send`; se evalúan
 antes del interruptor de arriba, así que en modo PoC un envío bloqueado por regla ni siquiera
@@ -512,7 +520,8 @@ local. No importa en la práctica: `npm run dev` usa `.env.local`, que apunta a 
 - `WHATSAPP_VERIFY_TOKEN`
 - `WHATSAPP_APP_SECRET`
 - `WHATSAPP_API_VERSION` (default `v23.0`)
-- `WHATSAPP_ENVIO_REAL` — solo `"true"` activa los envíos reales; ausente = modo PoC (§8)
+- `WHATSAPP_ENVIO_REAL` — `"true"` en remoto desde 2026-07-22 (envíos reales, §8); ausente u
+  otro valor = simula (`status='simulat'`)
 - `ALLOWED_ORIGIN` — admite **varios orígenes separados por comas** y `*` como comodín
   dentro de un origen, porque los despliegues de Vercel no tienen URL estable. Valor actual:
   `http://localhost:5173,https://pdapp-*-carlessanz-projects.vercel.app`. Si algún día se le
@@ -551,7 +560,8 @@ deno run -A scripts/import-ara.ts             # importar los CSV maestros
 **Checkpoints que NO son código** (POMA §10): la construcción está completa, pero para poner
 POMA en producción real quedan pasos de configuración y negocio.
 
-1. **Salir del modo PoC**: poner `WHATSAPP_ENVIO_REAL=true` cuando de verdad se quiera enviar.
+1. ~~**Salir del modo PoC**~~ — **hecho (2026-07-22)**: `WHATSAPP_ENVIO_REAL=true` en remoto. Lo
+   que contiene el riesgo ahora es el entorno de test de Meta (≤5 números) + `meta_test_recipients`.
 2. **Plantillas propias en Meta**: `oferta_excedent` y `confirmacio_productor` hay que darlas
    de alta y esperar su aprobación. En test solo `hello_world` está aprobada, así que el envío
    real de la oferta no funciona hasta entonces.

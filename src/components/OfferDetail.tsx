@@ -78,31 +78,37 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     setRanking(r.ranking)
   }
 
-  // "Enviar por API": en modo PoC no sale nada (queda 'simulat'); igualmente traza.
-  // Solo se envía a entidades con opt-in y cuyo teléfono esté en la lista de Meta.
+  // Envía la oferta a una entidad como TEXTO dentro de la ventana de 24 h (la abre
+  // la entidad al escribir). En el entorno de test de Meta las plantillas propias
+  // no son usables (solo hello_world), así que se manda el texto de la oferta; en
+  // producción, con `oferta_excedent` aprobada, se cambiaría a plantilla. Requiere
+  // opt-in y estar en la lista de Meta.
   async function enviarOferta(ent: EntidadPuntuada) {
     if (!ent.telefono || !ent.opt_in || !numerosTest.has(ent.telefono)) return
+    if (!exc.texto_oferta) {
+      setAviso('Aquesta oferta encara no té el text generat.')
+      return
+    }
     setAviso(null)
-    const r = await sendWhatsApp({
-      to: ent.telefono, type: 'template', template: 'oferta_excedent',
-      language: 'ca', components: [],
-    })
+    const r = await sendWhatsApp({ to: ent.telefono, type: 'text', body: exc.texto_oferta })
     if (r.ok) {
-      setAviso(`Oferta enviada a ${ent.nombre} (mode PoC: registrada com a simulada).`)
+      setAviso(`Oferta enviada a ${ent.nombre}.`)
+      return
+    }
+    const data = r.data as { error?: unknown; code?: string } | null
+    if (data?.code === 'no_test_recipient') {
+      setAviso(`${ent.nombre} no està a la llista de números de prova de Meta.`)
+    } else if (data?.code === 'unknown_contact') {
+      setAviso(`Encara no tenim conversa amb ${ent.nombre}: ha d'escriure «hola» al número primer.`)
+    } else if (data?.code === 'window_closed') {
+      setAviso(`La finestra de 24h amb ${ent.nombre} està tancada: que escrigui al número per obrir-la.`)
     } else {
-      const data = r.data as { error?: unknown; code?: string } | null
-      // code propio del servidor: destinatario fuera de la lista de test de Meta.
-      if (data?.code === 'no_test_recipient') {
-        setAviso(`${ent.nombre} no está en los números de prueba de Meta.`)
-        return
-      }
       const err = data?.error
-      // 131030: destinatario fuera de los 5 de test (error de la propia Meta).
       const meta = (typeof err === 'object' && err) as { code?: number } | null
       setAviso(
         meta?.code === 131030
-          ? `${ent.nombre} no está en los números de prueba de Meta.`
-          : typeof err === 'string' ? err : 'No se pudo enviar.',
+          ? `${ent.nombre} no està a la llista de números de prova de Meta.`
+          : typeof err === 'string' ? err : 'No s’ha pogut enviar.',
       )
     }
   }
@@ -236,7 +242,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
                         : !ent.opt_in ? 'Sin opt-in'
                         : !enMeta ? 'No está en los números de prueba de Meta' : undefined}
                       onClick={() => void enviarOferta(ent)}>
-                      Enviar per API
+                      Enviar oferta
                     </button>
                   </div>
                 </div>
