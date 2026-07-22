@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
+import { LogOut } from 'lucide-react'
 import { supabase } from './lib/supabase'
+import { cn } from './lib/utils'
 import type { Entidad, Excedente, Productor, WaContact } from './types'
 import AuthGate from './components/AuthGate'
 import Dashboard from './components/Dashboard'
@@ -15,6 +17,14 @@ import OfferDetail from './components/OfferDetail'
 type View = 'dashboard' | 'ofertas' | 'productores' | 'entidades' | 'mensajeria'
 type Registro = Record<string, unknown> & { id: string }
 
+const NAV: { id: View; label: string }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'ofertas', label: 'Ofertas' },
+  { id: 'productores', label: 'Productores' },
+  { id: 'entidades', label: 'Entidades' },
+  { id: 'mensajeria', label: 'Mensajería' },
+]
+
 export default function App() {
   const [view, setView] = useState<View>('dashboard')
   const [selectedOffer, setSelectedOffer] = useState<Excedente | null>(null)
@@ -23,7 +33,6 @@ export default function App() {
   const [contactsError, setContactsError] = useState<string | null>(null)
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
 
-  // CRUD: ficha abierta (editar) o alta nueva, para productores y entidades.
   const [productorDetalle, setProductorDetalle] = useState<Productor | null>(null)
   const [productorNuevo, setProductorNuevo] = useState(false)
   const [entidadDetalle, setEntidadDetalle] = useState<Entidad | null>(null)
@@ -50,9 +59,6 @@ export default function App() {
     void loadContacts()
   }, [loadContacts])
 
-  // Abre la mensajería con un teléfono (de un productor o de una entidad),
-  // asegurándolo como contacto de WhatsApp (con opt-in, como "Añadir contacto")
-  // sin tocar los existentes.
   const openMessagingWithContact = useCallback(
     async (phone: string, name: string | null) => {
       if (!phone) return
@@ -61,8 +67,6 @@ export default function App() {
         { onConflict: 'phone', ignoreDuplicates: true },
       )
       if (error) console.error('wa_contacts upsert:', error.message)
-      // Si ya existía (p. ej. creado por el webhook), sincroniza el nombre sin
-      // tocar su consentimiento.
       if (name) {
         const { error: nameError } = await supabase
           .from('wa_contacts').update({ name }).eq('phone', phone)
@@ -76,100 +80,125 @@ export default function App() {
   )
 
   const selected = contacts.find((c) => c.phone === selectedPhone) ?? null
-
   const cerrarProductor = () => { setProductorDetalle(null); setProductorNuevo(false) }
   const cerrarEntidad = () => { setEntidadDetalle(null); setEntidadNueva(false) }
 
-  // La mensajería tiene su propia navegación interna (sidebar + volver), así que
-  // la barra superior solo se muestra fuera de ella.
-  const nav = (
-    <nav className="topnav">
-      <button type="button" className={view === 'dashboard' ? 'active' : ''}
-        onClick={() => setView('dashboard')}>Dashboard</button>
-      <button type="button" className={view === 'ofertas' ? 'active' : ''}
-        onClick={() => { setView('ofertas'); setSelectedOffer(null) }}>Ofertas</button>
-      <button type="button" className={view === 'productores' ? 'active' : ''}
-        onClick={() => { setView('productores'); cerrarProductor() }}>Productores</button>
-      <button type="button" className={view === 'entidades' ? 'active' : ''}
-        onClick={() => { setView('entidades'); cerrarEntidad() }}>Entidades</button>
-      <button type="button" className={view === 'mensajeria' ? 'active' : ''}
-        onClick={() => setView('mensajeria')}>Mensajería</button>
-    </nav>
+  function irA(v: View) {
+    setView(v)
+    if (v === 'ofertas') setSelectedOffer(null)
+    if (v === 'productores') cerrarProductor()
+    if (v === 'entidades') cerrarEntidad()
+  }
+
+  const topbar = (
+    <header className="sticky top-0 z-20 border-b border-white/10 bg-primary">
+      <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2.5">
+        <img src="/logo-poma.svg" alt="POMA" className="h-7 w-auto" />
+        <nav className="flex flex-1 flex-wrap gap-1">
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              onClick={() => irA(n.id)}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                view === n.id
+                  ? 'bg-secondary text-primary'
+                  : 'text-secondary/80 hover:bg-white/10 hover:text-secondary',
+              )}
+            >
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        <button
+          type="button"
+          onClick={() => void supabase.auth.signOut()}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-secondary/80 hover:bg-white/10 hover:text-secondary"
+        >
+          <LogOut className="size-4" /> Salir
+        </button>
+      </div>
+    </header>
   )
 
   return (
     <AuthGate>
       {view === 'mensajeria' ? (
-        <div className="app">
-          <ContactList
-            contacts={contacts}
-            loading={loadingContacts}
-            error={contactsError}
-            selectedPhone={selectedPhone}
-            onSelect={setSelectedPhone}
-            onReload={loadContacts}
-            onBack={() => setView('dashboard')}
-          />
-          {selected ? (
-            <Conversation key={selected.phone} contact={selected} />
-          ) : (
-            <main className="chat chat-empty">
-              <p>Selecciona un contacto para ver su conversación</p>
-            </main>
-          )}
+        <div className="flex h-screen flex-col">
+          {topbar}
+          <div className="flex min-h-0 flex-1">
+            <ContactList
+              contacts={contacts}
+              loading={loadingContacts}
+              error={contactsError}
+              selectedPhone={selectedPhone}
+              onSelect={setSelectedPhone}
+              onReload={loadContacts}
+            />
+            {selected ? (
+              <Conversation key={selected.phone} contact={selected} />
+            ) : (
+              <main className="grid flex-1 place-items-center text-muted-foreground">
+                <p>Selecciona un contacto para ver su conversación</p>
+              </main>
+            )}
+          </div>
         </div>
       ) : (
-        <div className="shell">
-          {nav}
-          {view === 'dashboard' && <Dashboard />}
-          {view === 'ofertas' &&
-            (selectedOffer ? (
-              <OfferDetail excedente={selectedOffer} onBack={() => setSelectedOffer(null)} />
-            ) : (
-              <OffersList onOpen={setSelectedOffer} />
-            ))}
-          {view === 'productores' &&
-            (productorNuevo || productorDetalle ? (
-              <RecordDetail
-                titulo="Productor"
-                volverLabel="Productores"
-                tabla="productores"
-                campos={PRODUCTOR_CAMPOS}
-                registro={(productorDetalle as unknown as Registro) ?? null}
-                nombreKey="name"
-                telefonoKey="phone"
-                onBack={cerrarProductor}
-                onSaved={cerrarProductor}
-                onSendMessage={openMessagingWithContact}
-              />
-            ) : (
-              <ProducersList
-                onSendMessage={openMessagingWithContact}
-                onOpenDetail={(p) => { setProductorNuevo(false); setProductorDetalle(p) }}
-                onNew={() => { setProductorDetalle(null); setProductorNuevo(true) }}
-              />
-            ))}
-          {view === 'entidades' &&
-            (entidadNueva || entidadDetalle ? (
-              <RecordDetail
-                titulo="Entidad"
-                volverLabel="Entidades"
-                tabla="entidades"
-                campos={ENTIDAD_CAMPOS}
-                registro={(entidadDetalle as unknown as Registro) ?? null}
-                nombreKey="nombre"
-                telefonoKey="telefono"
-                onBack={cerrarEntidad}
-                onSaved={cerrarEntidad}
-                onSendMessage={openMessagingWithContact}
-              />
-            ) : (
-              <EntitiesList
-                onSendMessage={openMessagingWithContact}
-                onOpenDetail={(e) => { setEntidadNueva(false); setEntidadDetalle(e) }}
-                onNew={() => { setEntidadDetalle(null); setEntidadNueva(true) }}
-              />
-            ))}
+        <div className="min-h-screen">
+          {topbar}
+          <div className="mx-auto max-w-6xl px-4 py-6">
+            {view === 'dashboard' && <Dashboard />}
+            {view === 'ofertas' &&
+              (selectedOffer ? (
+                <OfferDetail excedente={selectedOffer} onBack={() => setSelectedOffer(null)} />
+              ) : (
+                <OffersList onOpen={setSelectedOffer} />
+              ))}
+            {view === 'productores' &&
+              (productorNuevo || productorDetalle ? (
+                <RecordDetail
+                  titulo="Productor"
+                  volverLabel="Productores"
+                  tabla="productores"
+                  campos={PRODUCTOR_CAMPOS}
+                  registro={(productorDetalle as unknown as Registro) ?? null}
+                  nombreKey="name"
+                  telefonoKey="phone"
+                  onBack={cerrarProductor}
+                  onSaved={cerrarProductor}
+                  onSendMessage={openMessagingWithContact}
+                />
+              ) : (
+                <ProducersList
+                  onSendMessage={openMessagingWithContact}
+                  onOpenDetail={(p) => { setProductorNuevo(false); setProductorDetalle(p) }}
+                  onNew={() => { setProductorDetalle(null); setProductorNuevo(true) }}
+                />
+              ))}
+            {view === 'entidades' &&
+              (entidadNueva || entidadDetalle ? (
+                <RecordDetail
+                  titulo="Entidad"
+                  volverLabel="Entidades"
+                  tabla="entidades"
+                  campos={ENTIDAD_CAMPOS}
+                  registro={(entidadDetalle as unknown as Registro) ?? null}
+                  nombreKey="nombre"
+                  telefonoKey="telefono"
+                  onBack={cerrarEntidad}
+                  onSaved={cerrarEntidad}
+                  onSendMessage={openMessagingWithContact}
+                />
+              ) : (
+                <EntitiesList
+                  onSendMessage={openMessagingWithContact}
+                  onOpenDetail={(e) => { setEntidadNueva(false); setEntidadDetalle(e) }}
+                  onNew={() => { setEntidadDetalle(null); setEntidadNueva(true) }}
+                />
+              ))}
+          </div>
         </div>
       )}
     </AuthGate>

@@ -1,55 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
-  anadirNumeroTest,
-  borrarNumeroTest,
-  listarNumerosTest,
+  anadirNumeroTest, borrarNumeroTest, listarNumerosTest, type MetaTestRecipient,
 } from '../lib/metaTest'
-import type { MetaTestRecipient } from '../lib/metaTest'
+import {
+  anadirEmailTest, borrarEmailTest, listarEmailsTest, type EmailTestRecipient,
+} from '../lib/emailTest'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-// Filas mínimas que carga el dashboard para calcular los KPIs.
-interface MsgRow {
-  contact_phone: string
-  direction: 'inbound' | 'outbound'
-  created_at: string
-}
-interface ExcRow {
-  id: string
-  estado: string
-  kg_total: number | null
-}
+interface MsgRow { contact_phone: string; direction: 'inbound' | 'outbound'; created_at: string }
+interface ExcRow { id: string; estado: string; kg_total: number | null }
 
 const ACTIVOS = ['borrador', 'publicada', 'parcial', 'bloqueada']
 
-// Los 4 momentos del proceso POMA (§8 del manual), en una frase cada uno.
 const PROCESO = [
-  {
-    n: 1,
-    titulo: 'Entrada de la oferta',
-    texto:
-      'El productor escribe por WhatsApp y POMA convierte su excedente en una oferta con identificador propio.',
-  },
-  {
-    n: 2,
-    titulo: 'Distribución',
-    texto:
-      'Se priorizan las entidades sociales por cercanía y capacidad, y se les avisa una a una.',
-  },
-  {
-    n: 3,
-    titulo: 'Confirmación',
-    texto:
-      'Al cubrir los kg la oferta se bloquea y se envía la RECOLLIDA CONFIRMADA.',
-  },
-  {
-    n: 4,
-    titulo: 'Cierre',
-    texto:
-      'Se registran los kg reales y los albaranes; lo que no se coloca se marca con su motivo.',
-  },
+  { n: 1, titulo: 'Entrada de la oferta', texto: 'El productor escribe por WhatsApp y POMA convierte su excedente en una oferta.' },
+  { n: 2, titulo: 'Distribución', texto: 'Se priorizan las entidades por cercanía y capacidad, y se les avisa (WhatsApp o email).' },
+  { n: 3, titulo: 'Confirmación', texto: 'Al cubrir los kg la oferta se bloquea y se envía la RECOLLIDA CONFIRMADA.' },
+  { n: 4, titulo: 'Cierre', texto: 'Se registran los kg reales y albaranes; lo que no se coloca se marca con su motivo.' },
 ]
 
-// Cuenta inbound posteriores al último outbound de cada teléfono.
 function contarSinContestar(rows: MsgRow[]): number {
   const lastOutbound: Record<string, string> = {}
   for (const r of rows) {
@@ -68,29 +41,106 @@ function contarSinContestar(rows: MsgRow[]): number {
 
 const soloDigitos = (s: string | null) => (s ?? '').replace(/\D/g, '')
 
+// KPI reutilizable
+function Kpi({ titulo, valor, sub, detalle }: {
+  titulo: string; valor: number | string; sub: string; detalle: { texto: string; destacado?: boolean }[]
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-3xl font-bold leading-none text-primary">{valor}</div>
+        <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
+        <ul className="mt-3 space-y-0.5 border-t pt-2 text-sm">
+          {detalle.map((d, i) => (
+            <li key={i} className={d.destacado ? 'font-medium text-blue-700' : 'text-muted-foreground'}>{d.texto}</li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Gestor de whitelist genérico (Meta y email comparten forma).
+function GestorWhitelist({ titulo, ayuda, items, placeholderClave, placeholderEtiqueta, max, onAdd, onDelete }: {
+  titulo: string
+  ayuda: string
+  items: { clave: string; etiqueta: string | null }[]
+  placeholderClave: string
+  placeholderEtiqueta: string
+  max: number
+  onAdd: (clave: string, etiqueta: string) => Promise<string | null>
+  onDelete: (clave: string) => Promise<void>
+}) {
+  const [clave, setClave] = useState('')
+  const [etiqueta, setEtiqueta] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{titulo}</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">{ayuda}</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          {items.length === 0 && <p className="text-sm text-muted-foreground">Todavía no hay ninguno.</p>}
+          {items.map((r) => (
+            <div key={r.clave} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm">
+              <span className="font-medium tabular-nums">{r.clave}</span>
+              <span className="flex-1 text-muted-foreground">{r.etiqueta ?? '—'}</span>
+              <Button variant="ghost" size="icon" className="size-7" onClick={() => void onDelete(r.clave)}>
+                <X className="size-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+        {items.length < max && (
+          <div className="flex flex-wrap gap-2">
+            <Input className="flex-1" placeholder={placeholderClave} value={clave}
+              onChange={(e) => { setClave(e.target.value); setError(null) }} />
+            <Input className="flex-1" placeholder={placeholderEtiqueta} value={etiqueta}
+              onChange={(e) => setEtiqueta(e.target.value)} />
+            <Button onClick={async () => {
+              const err = await onAdd(clave, etiqueta)
+              if (err) { setError(err); return }
+              setClave(''); setEtiqueta('')
+            }}>Añadir</Button>
+          </div>
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function Dashboard() {
   const [prodPhones, setProdPhones] = useState<(string | null)[]>([])
-  const [entidades, setEntidades] = useState<{ telefono: string | null; opt_in: boolean | null }[]>([])
+  const [entidades, setEntidades] = useState<{ telefono: string | null; email: string | null; opt_in: boolean | null }[]>([])
   const [excedentes, setExcedentes] = useState<ExcRow[]>([])
   const [canalKg, setCanalKg] = useState<Record<string, number>>({})
   const [kgConfirmadosTotal, setKgConfirmadosTotal] = useState(0)
   const [mensajes, setMensajes] = useState<MsgRow[]>([])
   const [intakeActivas, setIntakeActivas] = useState(0)
   const [lista, setLista] = useState<MetaTestRecipient[]>([])
+  const [listaEmail, setListaEmail] = useState<EmailTestRecipient[]>([])
   const [loading, setLoading] = useState(true)
 
   const numerosSet = useMemo(() => new Set(lista.map((r) => r.phone)), [lista])
 
   const cargar = useCallback(async () => {
     setLoading(true)
-    const [prod, ent, exc, canal, msg, intake, metaLista] = await Promise.all([
+    const [prod, ent, exc, canal, msg, intake, meta, mails] = await Promise.all([
       supabase.from('productores').select('phone'),
-      supabase.from('entidades').select('telefono, opt_in'),
+      supabase.from('entidades').select('telefono, email, opt_in'),
       supabase.from('excedentes').select('id, estado, kg_total'),
       supabase.from('canalizaciones').select('excedente_id, kg_confirmados'),
       supabase.from('wa_messages').select('contact_phone, direction, created_at'),
       supabase.from('intake_sessions').select('id'),
       listarNumerosTest(),
+      listarEmailsTest(),
     ])
     setProdPhones((prod.data ?? []).map((p) => p.phone))
     setEntidades(ent.data ?? [])
@@ -106,13 +156,12 @@ export default function Dashboard() {
     setKgConfirmadosTotal(totalKg)
     setMensajes((msg.data as MsgRow[]) ?? [])
     setIntakeActivas((intake.data ?? []).length)
-    setLista(metaLista)
+    setLista(meta)
+    setListaEmail(mails)
     setLoading(false)
   }, [])
 
-  useEffect(() => {
-    void cargar()
-  }, [cargar])
+  useEffect(() => { void cargar() }, [cargar])
 
   const kpis = useMemo(() => {
     const ofertas = { activas: 0, bloqueadas: 0, cerradas: 0, noColocadas: 0, canceladas: 0 }
@@ -123,183 +172,94 @@ export default function Dashboard() {
       else if (e.estado === 'no_colocada') ofertas.noColocadas += 1
       else if (e.estado === 'cancelada') ofertas.canceladas += 1
       if (['borrador', 'publicada', 'parcial'].includes(e.estado)) ofertas.activas += 1
-      if (ACTIVOS.includes(e.estado)) {
-        pendientes += Math.max(0, Number(e.kg_total ?? 0) - (canalKg[e.id] ?? 0))
-      }
+      if (ACTIVOS.includes(e.estado)) pendientes += Math.max(0, Number(e.kg_total ?? 0) - (canalKg[e.id] ?? 0))
     }
-
     const conMovil = prodPhones.filter((p) => p && soloDigitos(p).length >= 9).length
     const prodEnMeta = prodPhones.filter((p) => p && numerosSet.has(p)).length
-
     const entConOptIn = entidades.filter((e) => e.opt_in).length
     const entEnMeta = entidades.filter((e) => numerosSet.has(soloDigitos(e.telefono))).length
-
+    const entConEmail = entidades.filter((e) => e.email).length
     const recibidos = mensajes.filter((m) => m.direction === 'inbound').length
-    const sinContestar = contarSinContestar(mensajes)
-
     return {
-      ofertas,
-      kg: { canalizados: kgConfirmadosTotal, pendientes },
+      ofertas, kg: { canalizados: kgConfirmadosTotal, pendientes },
       productores: { total: prodPhones.length, conMovil, enMeta: prodEnMeta },
-      entidades: { total: entidades.length, conOptIn: entConOptIn, enMeta: entEnMeta },
-      mensajes: { recibidos, sinContestar, intakeActivas },
+      entidades: { total: entidades.length, conOptIn: entConOptIn, enMeta: entEnMeta, conEmail: entConEmail },
+      mensajes: { recibidos, sinContestar: contarSinContestar(mensajes), intakeActivas },
     }
   }, [excedentes, canalKg, kgConfirmadosTotal, prodPhones, entidades, mensajes, intakeActivas, numerosSet])
 
-  // Gestor de la lista de Meta: alta/baja tocan la BD y refrescan el estado local.
-  const [nuevoPhone, setNuevoPhone] = useState('')
-  const [nuevaEtiqueta, setNuevaEtiqueta] = useState('')
-  const [metaError, setMetaError] = useState<string | null>(null)
-
-  async function anadir() {
-    setMetaError(null)
-    if (lista.length >= 5) {
-      setMetaError('Meta permite como máximo 5 números de prueba.')
-      return
-    }
-    const err = await anadirNumeroTest(nuevoPhone, nuevaEtiqueta)
-    if (err) {
-      setMetaError(err)
-      return
-    }
-    setNuevoPhone('')
-    setNuevaEtiqueta('')
-    setLista(await listarNumerosTest())
-  }
-
-  async function borrar(phone: string) {
-    await borrarNumeroTest(phone)
-    setLista(await listarNumerosTest())
-  }
-
   return (
-    <main className="dashboard">
-      <header className="dashboard-head">
-        <h1>Panel POMA</h1>
-        <p className="hint">
-          Canalización de excedentes agrícolas por WhatsApp. En modo prueba de concepto:
-          no sale ningún mensaje real.
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold">Panel POMA</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Canalización de excedentes agrícolas por WhatsApp y email. Envíos limitados a los números/correos de prueba.
         </p>
-      </header>
+      </div>
 
-      {/* Guía del proceso */}
-      <section className="dash-section">
-        <h2>Cómo funciona</h2>
-        <div className="proceso-grid">
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Cómo funciona</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {PROCESO.map((p) => (
-            <div key={p.n} className="proceso-card">
-              <span className="proceso-num">{p.n}</span>
-              <h3>{p.titulo}</h3>
-              <p>{p.texto}</p>
-            </div>
+            <Card key={p.n}>
+              <CardContent className="pt-6">
+                <span className="inline-flex size-7 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{p.n}</span>
+                <h3 className="mt-2 text-sm font-semibold">{p.titulo}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{p.texto}</p>
+              </CardContent>
+            </Card>
           ))}
         </div>
       </section>
 
-      {/* KPIs */}
-      <section className="dash-section">
-        <h2>De un vistazo</h2>
-        {loading ? (
-          <p className="hint">Cargando datos…</p>
-        ) : (
-          <div className="kpi-grid">
-            <div className="kpi-card">
-              <h3>Ofertas</h3>
-              <div className="kpi-big">{kpis.ofertas.activas}</div>
-              <p className="kpi-sub">activas</p>
-              <ul className="kpi-detalle">
-                <li>{kpis.ofertas.bloqueadas} bloquejades</li>
-                <li>{kpis.ofertas.cerradas} tancades</li>
-                <li>{kpis.ofertas.noColocadas} no col·locades</li>
-                <li>{kpis.ofertas.canceladas} cancel·lades</li>
-              </ul>
-            </div>
-            <div className="kpi-card">
-              <h3>Kg</h3>
-              <div className="kpi-big">{kpis.kg.canalizados}</div>
-              <p className="kpi-sub">canalitzats</p>
-              <ul className="kpi-detalle">
-                <li>{kpis.kg.pendientes} pendents en ofertes actives</li>
-              </ul>
-            </div>
-            <div className="kpi-card">
-              <h3>Productores</h3>
-              <div className="kpi-big">{kpis.productores.total}</div>
-              <p className="kpi-sub">en la base</p>
-              <ul className="kpi-detalle">
-                <li>{kpis.productores.conMovil} con móvil</li>
-                <li className="kpi-destacado">{kpis.productores.enMeta} en Meta (pueden recibir)</li>
-              </ul>
-            </div>
-            <div className="kpi-card">
-              <h3>Entidades</h3>
-              <div className="kpi-big">{kpis.entidades.total}</div>
-              <p className="kpi-sub">receptoras</p>
-              <ul className="kpi-detalle">
-                <li>{kpis.entidades.conOptIn} con opt-in</li>
-                <li className="kpi-destacado">{kpis.entidades.enMeta} en Meta (pueden recibir)</li>
-              </ul>
-            </div>
-            <div className="kpi-card">
-              <h3>Mensajes</h3>
-              <div className="kpi-big">{kpis.mensajes.recibidos}</div>
-              <p className="kpi-sub">recibidos</p>
-              <ul className="kpi-detalle">
-                <li>{kpis.mensajes.sinContestar} sin contestar</li>
-                <li>{kpis.mensajes.intakeActivas} sesiones de intake</li>
-              </ul>
-            </div>
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">De un vistazo</h2>
+        {loading ? <p className="text-sm text-muted-foreground">Cargando datos…</p> : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Kpi titulo="Ofertas" valor={kpis.ofertas.activas} sub="activas" detalle={[
+              { texto: `${kpis.ofertas.bloqueadas} bloquejades` },
+              { texto: `${kpis.ofertas.cerradas} tancades` },
+              { texto: `${kpis.ofertas.noColocadas} no col·locades` },
+              { texto: `${kpis.ofertas.canceladas} cancel·lades` },
+            ]} />
+            <Kpi titulo="Kg" valor={kpis.kg.canalizados} sub="canalitzats" detalle={[
+              { texto: `${kpis.kg.pendientes} pendents en ofertes actives` },
+            ]} />
+            <Kpi titulo="Productores" valor={kpis.productores.total} sub="en la base" detalle={[
+              { texto: `${kpis.productores.conMovil} con móvil` },
+              { texto: `${kpis.productores.enMeta} en Meta (pueden recibir)`, destacado: true },
+            ]} />
+            <Kpi titulo="Entidades" valor={kpis.entidades.total} sub="receptoras" detalle={[
+              { texto: `${kpis.entidades.conOptIn} con opt-in` },
+              { texto: `${kpis.entidades.conEmail} con email` },
+              { texto: `${kpis.entidades.enMeta} en Meta (pueden recibir)`, destacado: true },
+            ]} />
+            <Kpi titulo="Mensajes" valor={kpis.mensajes.recibidos} sub="recibidos" detalle={[
+              { texto: `${kpis.mensajes.sinContestar} sin contestar` },
+              { texto: `${kpis.mensajes.intakeActivas} sesiones de intake` },
+            ]} />
           </div>
         )}
       </section>
 
-      {/* Gestor de la lista de test de Meta */}
-      <section className="dash-section">
-        <h2>Números de prueba (Meta)</h2>
-        <p className="hint dash-hint-left">
-          En el entorno de test, WhatsApp solo entrega a estos números (máximo 5). El alta real
-          se hace en el panel de Meta, donde el destinatario confirma un código; aquí solo se
-          registra cuáles son. Esta lista decide quién puede recibir en toda la app: si está
-          vacía, no se aplica ningún límite.
-        </p>
-
-        <div className="meta-lista">
-          {lista.length === 0 && <p className="hint dash-hint-left">Todavía no hay números.</p>}
-          {lista.map((r) => (
-            <div key={r.phone} className="meta-fila">
-              <span className="meta-fila-phone">+{r.phone}</span>
-              <span className="meta-fila-etiqueta">{r.etiqueta ?? '—'}</span>
-              <button type="button" className="btn btn-secondary" onClick={() => void borrar(r.phone)}>
-                Quitar
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {lista.length < 5 && (
-          <div className="meta-alta">
-            <input
-              type="tel"
-              placeholder="Teléfono (34612345678)"
-              value={nuevoPhone}
-              onChange={(e) => {
-                setNuevoPhone(e.target.value)
-                setMetaError(null)
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Etiqueta (nombre)"
-              value={nuevaEtiqueta}
-              onChange={(e) => setNuevaEtiqueta(e.target.value)}
-            />
-            <button type="button" className="btn btn-primary" onClick={() => void anadir()}>
-              Añadir
-            </button>
-          </div>
-        )}
-        {metaError && <div className="notice notice-error">{metaError}</div>}
+      <section className="grid gap-3 lg:grid-cols-2">
+        <GestorWhitelist
+          titulo="Números de prueba (Meta)"
+          ayuda="En test, WhatsApp solo entrega a estos números (máx. 5), dados de alta en Meta. Si está vacía, no se aplica límite."
+          items={lista.map((r) => ({ clave: r.phone, etiqueta: r.etiqueta }))}
+          placeholderClave="34612345678" placeholderEtiqueta="Etiqueta" max={5}
+          onAdd={async (c, e) => { const err = await anadirNumeroTest(c, e); if (!err) setLista(await listarNumerosTest()); return err }}
+          onDelete={async (c) => { await borrarNumeroTest(c); setLista(await listarNumerosTest()) }}
+        />
+        <GestorWhitelist
+          titulo="Correos de prueba (email)"
+          ayuda="Las ofertas por email solo se mandan a estos correos. Requiere un dominio verificado en Resend. Si está vacía, no se aplica límite."
+          items={listaEmail.map((r) => ({ clave: r.email, etiqueta: r.etiqueta }))}
+          placeholderClave="correo@dominio.com" placeholderEtiqueta="Etiqueta" max={20}
+          onAdd={async (c, e) => { const err = await anadirEmailTest(c, e); if (!err) setListaEmail(await listarEmailsTest()); return err }}
+          onDelete={async (c) => { await borrarEmailTest(c); setListaEmail(await listarEmailsTest()) }}
+        />
       </section>
-    </main>
+    </div>
   )
 }

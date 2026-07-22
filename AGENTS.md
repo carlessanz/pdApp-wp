@@ -43,14 +43,19 @@ es el mapa de ejecución.
 
 | Capa | Tecnología |
 | --- | --- |
-| Frontend | Vite 7 + React 19 + TypeScript 5.9 (`strict`) |
+| Frontend | Vite 7 + React 19 + TypeScript 5.9 (`strict`) + **Tailwind v4 + shadcn/ui** |
 | Datos / Realtime | Supabase (`@supabase/supabase-js` v2) |
 | Backend | Edge Functions de Supabase (Deno / TypeScript) |
+| Email | **Resend** (API HTTP, vía Edge Function `enviar-email`) |
 | BD | Postgres (Supabase) con RLS |
 | Scripts | Deno 2.x (`scripts/import-ara.ts`) |
 | Hosting frontend | Vercel (proyecto `pdapp-wp`) |
 
-Sin router, sin librería de estado, sin framework de CSS: un único `src/index.css` global.
+Sin router ni librería de estado. **UI con Tailwind v4 + shadcn/ui**: componentes en
+`src/components/ui/` (generados con el CLI de shadcn, `components.json`), tokens del **tema POMA**
+en `src/index.css` (navy `#234C66` / crema `#E0EBC7` / coral `#EE7A5F`, fuente Space Grotesk),
+alias `@/` → `src/`. Iconos `lucide-react`, toasts `sonner`, `cn()` en `src/lib/utils.ts`. El
+logo (`public/logo-poma.svg`) y el favicon están en `public/`.
 
 ## 3. Estructura
 
@@ -95,6 +100,10 @@ supabase/
     whatsapp-send/index.ts     POST: reglas de envío; delega en _shared
     whatsapp-webhook/index.ts  GET verificación / POST recepción; engancha el intake
     intake-recordatorios/      POST: avisa intakes a medias (lo llama pg_cron vía pg_net)
+    enviar-email/index.ts      POST: ofertas por email (JWT + gate email_test_recipients)
+    recuperar-password/index.ts POST público: genera enlace de reset y lo manda por Resend
+    _shared/resend.ts          sendEmail() vía Resend, compartido
+    _shared/plantillas-meta.md Contenido de las plantillas de Meta (oferta_excedent…) listo
 docs/                          Material de trabajo local — IGNORADO POR GIT (§7)
   nuevas-funcionalidades/      Specs POMA, manuales y CSV de origen
 ```
@@ -156,6 +165,13 @@ para el gate de envío (§8). **Semántica clave**: si la tabla tiene filas, sol
 quien esté en ella; si está **vacía**, no restringe nada (así, al pasar a un número de
 producción sin el límite de 5, se vacía la lista y el gate desaparece solo). La gestiona
 `src/lib/metaTest.ts` desde el Dashboard.
+
+**`email_test_recipients`** — `email` PK, `etiqueta`, `created_at`
+(`20260722150000_email_test_recipients.sql`). Whitelist análoga a `meta_test_recipients` pero
+para el canal **email** (Resend): si tiene filas, `enviar-email` solo manda a esos correos;
+vacía = sin límite. RLS: `authenticated` select/insert/delete. La gestiona `src/lib/emailTest.ts`
+desde el Dashboard. **Ojo**: Resend sin dominio verificado solo entrega al correo propietario de
+la cuenta, así que esta lista es la segunda barrera, no la única.
 
 **`app_config`** — `key` PK, `value`, `updated_at` (`20260722130000_intake_recordatorios.sql`).
 Clave/valor para secretos que un **job** necesita y que no pueden ir en git. Hoy guarda
@@ -455,20 +471,27 @@ cierre real (kg reales, albaranes, o marcar `no_colocada` con motivo).
 | `whatsapp-send` | Desplegada **con** verificación de JWT (sin `--no-verify-jwt`) y además comprueba `getUser(token)` |
 | `whatsapp-webhook` | Sigue con `--no-verify-jwt` porque Meta no envía JWT; se valida la firma `X-Hub-Signature-256` |
 | Alta de cuentas | Solo con la Admin API (`scripts/crear-usuario.ts`). El registro público está desactivado |
+| Login | `AuthGate.tsx`: `signInWithPassword` + botón «ojo» (mostrar/ocultar) + «¿olvidaste la contraseña?» |
+| Recuperar contraseña | Edge Function `recuperar-password` (pública) + Resend; **no** usa el mailer nativo (§ abajo) |
 
-### Ningún flujo envía correos
+### Correos: ahora sí, pero solo por Resend
 
-Requisito explícito mientras estemos en pruebas. Se cumple así:
+Cambió la política del proyecto: el reset de contraseña y el envío de ofertas por email **sí
+mandan correo**, pero **siempre por Resend** (nunca el mailer nativo de Supabase Auth, que sigue
+apagado y en test). Detalle:
 
-- `enable_confirmations = false` y `mailer_autoconfirm = true`: el alta no manda
-  confirmación. Verificado en local y en remoto vía `/auth/v1/settings`.
-- Las cuentas se crean con `admin.createUser({ email_confirm: true })`, que da el
-  correo por verificado **sin enviar nada**.
-- **No usar nunca** `inviteUserByEmail()`, `resetPasswordForEmail()` ni
-  `signInWithOtp()`/magic links: los tres envían correo de verdad. Por eso el
-  formulario de login no ofrece "he olvidado mi contraseña" ni registro.
-- En local los correos irían a Mailpit (`http://127.0.0.1:55324`) sin salir a
-  internet; sirve para comprobar que la bandeja sigue vacía.
+- El **mailer nativo de Auth sigue apagado**: `enable_confirmations=false`,
+  `mailer_autoconfirm=true`, cuentas con `admin.createUser({email_confirm:true})` → el **alta no
+  envía nada**. Sigue prohibido usar `resetPasswordForEmail()`, `inviteUserByEmail()` o magic
+  links (esos disparan el mailer nativo).
+- El **reset** usa `admin.generateLink({type:'recovery'})` (Admin API, **no** envía correo por sí
+  mismo) y el enlace se manda por **Resend** desde `recuperar-password`. La app detecta el evento
+  `PASSWORD_RECOVERY` y muestra el form de nueva contraseña (`AuthGate`). La `redirectTo` (APP_URL)
+  debe estar en la allow-list de Auth (Management API, **no** config push; §10).
+- **Resend sin dominio verificado solo entrega al correo propietario de la cuenta**
+  (hoy `tecnologia@espigoladors.com`); a cualquier otro devuelve `validation_error`. Para enviar a
+  las entidades/usuarios hay que **verificar un dominio en Resend** y poner `RESEND_FROM` con una
+  dirección de ese dominio. Además, el gate `email_test_recipients` limita a los correos de test.
 
 ### Lo que sigue pendiente
 
@@ -529,8 +552,16 @@ local. No importa en la práctica: `npm run dev` usa `.env.local`, que apunta a 
 - `RECORDATORIOS_SECRET` — secreto compartido que valida `intake-recordatorios`; el **mismo**
   valor va en `app_config.recordatorios_secret` para que el job lo pueda enviar (§4, §5). Nunca
   en git.
+- `RESEND_API_KEY` — API key de Resend (ofertas por email y reset de contraseña). Nunca en git.
+- `RESEND_FROM` — remitente (`from`) de un dominio **verificado** en Resend; ausente = usa
+  `onboarding@resend.dev`, que **solo entrega al correo owner** de la cuenta Resend.
+- `APP_URL` — URL de la app para el `redirectTo` del reset (hoy el branch-alias de Vercel
+  `https://pdapp-wp-git-main-carlessanz-projects.vercel.app`); debe estar en la allow-list de Auth.
 - `SB_SECRET_KEY` (`sb_secret_...`)
 - `SUPABASE_URL` (la inyecta Supabase automáticamente)
+
+**Redirect URLs de Auth** (Management API, no config push): `site_url` = APP_URL y `uri_allow_list`
+incluye `localhost:5173`, la URL de producción y el comodín `https://pdapp-*-carlessanz-projects.vercel.app/**`.
 
 **Scripts**: `SUPABASE_URL` y `SB_SECRET_KEY` en el entorno.
 
@@ -546,6 +577,8 @@ supabase functions deploy whatsapp-send        # con verify_jwt
 supabase functions deploy whatsapp-webhook --no-verify-jwt
 supabase functions deploy priorizar-entidades  # con verify_jwt
 supabase functions deploy intake-recordatorios --no-verify-jwt   # lo llama pg_cron
+supabase functions deploy enviar-email         # con verify_jwt (ofertas por email)
+supabase functions deploy recuperar-password --no-verify-jwt     # login público
 supabase secrets set --env-file .secrets.env
 
 deno run -A scripts/import-ara.ts --dry-run   # analizar sin escribir

@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { cargarNumerosTest } from '../lib/metaTest'
 import type { Entidad } from '../types'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
 
 interface Props {
   onSendMessage: (phone: string, name: string | null) => void
@@ -9,11 +17,8 @@ interface Props {
   onNew: () => void
 }
 
-// Solo dígitos, para comparar teléfonos con la lista de Meta (E.164 sin '+').
 const soloDigitos = (s: string | null) => (s ?? '').replace(/\D/g, '')
 
-// Una entidad casa con la búsqueda si el texto aparece en nombre, población,
-// área, teléfono, email o contacto.
 function casa(e: Entidad, q: string): boolean {
   if (!q) return true
   const campos = [e.nombre, e.poblacion, e.area_geografica, e.telefono, e.email, e.contacto]
@@ -29,25 +34,17 @@ export default function EntitiesList({ onSendMessage, onOpenDetail, onNew }: Pro
 
   useEffect(() => {
     let cancelled = false
-    supabase
-      .from('entidades')
-      .select('*')
-      .order('nombre', { ascending: true })
+    supabase.from('entidades').select('*').order('nombre', { ascending: true })
       .then(({ data, error: loadError }) => {
         if (cancelled) return
         if (loadError) setError(`No se pudieron cargar las entidades: ${loadError.message}`)
         else setEntidades(data ?? [])
         setLoading(false)
       })
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [])
 
-  // Números dados de alta en Meta: definen qué entidades pueden recibir ofertas.
-  useEffect(() => {
-    void cargarNumerosTest().then(setNumerosTest)
-  }, [])
+  useEffect(() => { void cargarNumerosTest().then(setNumerosTest) }, [])
 
   const filtradas = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
@@ -55,88 +52,79 @@ export default function EntitiesList({ onSendMessage, onOpenDetail, onNew }: Pro
   }, [entidades, busqueda])
 
   return (
-    <main className="producers">
-      <div className="producers-card">
-        <header className="producers-header">
-          <div className="producers-header-top">
-            <h1>Entidades receptoras</h1>
-            <button type="button" className="btn btn-primary" onClick={onNew}>Nueva entidad</button>
-          </div>
-          <p className="hint">
-            Entidades sociales que reciben los excedentes. El badge «Meta» marca las que pueden
-            recibir mensajes por estar dadas de alta en Meta.
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div>
+          <CardTitle>Entidades receptoras</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            El badge «Meta» marca las que pueden recibir mensajes.
           </p>
-        </header>
+        </div>
+        <Button onClick={onNew}><Plus className="size-4" /> Nueva</Button>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <Input type="search" placeholder="Buscar por nombre, población, área, teléfono, email o contacto…"
+          value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
 
-        <input
-          type="search"
-          className="buscador"
-          placeholder="Buscar por nombre, población, área, teléfono, email o contacto…"
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-        />
-
-        {loading && <p className="hint">Cargando entidades…</p>}
-        {error && <div className="notice notice-error">{error}</div>}
+        {loading && <p className="text-sm text-muted-foreground">Cargando entidades…</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
         {!loading && !error && filtradas.length === 0 && (
-          <p className="hint">
-            {entidades.length === 0
-              ? 'No hay entidades registradas.'
-              : 'Ninguna entidad casa con la búsqueda.'}
+          <p className="text-sm text-muted-foreground">
+            {entidades.length === 0 ? 'No hay entidades.' : 'Ninguna entidad casa con la búsqueda.'}
           </p>
         )}
 
-        {!loading && !error && filtradas.length > 0 && (
-          <div className="producers-table-wrap">
-            <table className="producers-table">
-              <thead>
-                <tr>
-                  <th>Nombre</th>
-                  <th>Población</th>
-                  <th>Teléfono</th>
-                  <th>Prio.</th>
-                  <th>Estat</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
+        {filtradas.length > 0 && (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Población</TableHead>
+                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Prio.</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filtradas.map((e) => {
                   const tel = soloDigitos(e.telefono)
                   const enMeta = tel !== '' && numerosTest.has(tel)
                   return (
-                    <tr key={e.id}>
-                      <td>
-                        {e.nombre}
-                        {enMeta && <span className="meta-badge">Meta</span>}
-                      </td>
-                      <td>{e.poblacion ?? '—'}</td>
-                      <td>{tel ? `+${tel}` : '—'}</td>
-                      <td>{e.prioritat ?? '—'}</td>
-                      <td>{e.estat ?? '—'}</td>
-                      <td>
-                        <div className="fila-acciones">
-                          <button type="button" className="btn btn-secondary" onClick={() => onOpenDetail(e)}>
+                    <TableRow key={e.id}>
+                      <TableCell className="font-medium">
+                        <span className="flex flex-wrap items-center gap-2">
+                          {e.nombre}
+                          {enMeta && <Badge variant="secondary">Meta</Badge>}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{e.poblacion ?? '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">
+                        {tel ? `+${tel}` : '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{e.email ?? '—'}</TableCell>
+                      <TableCell>{e.prioritat ?? '—'}</TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="sm" onClick={() => onOpenDetail(e)}>
                             Detalle
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={() => tel && onSendMessage(tel, e.nombre)}
-                            disabled={!tel}
-                            title={tel ? undefined : 'Sin teléfono registrado'}
-                          >
-                            Enviar mensaje
-                          </button>
+                          </Button>
+                          <Button size="sm" disabled={!tel}
+                            title={tel ? undefined : 'Sin teléfono'}
+                            onClick={() => tel && onSendMessage(tel, e.nombre)}>
+                            Mensaje
+                          </Button>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
-      </div>
-    </main>
+      </CardContent>
+    </Card>
   )
 }

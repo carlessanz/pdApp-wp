@@ -1,17 +1,27 @@
 import { useState } from 'react'
+import { ArrowLeft, MessageCircle, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '../lib/supabase'
 import type { CampoDef } from '../lib/crudCampos'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
 type Registro = Record<string, unknown> & { id: string }
 
 interface Props {
-  titulo: string // singular: "Productor" / "Entidad"
-  volverLabel: string // "Productores" / "Entidades"
+  titulo: string
+  volverLabel: string
   tabla: 'productores' | 'entidades'
   campos: CampoDef[]
-  registro: Registro | null // null => alta de una ficha nueva
-  nombreKey: string // 'name' / 'nombre'
-  telefonoKey?: string // 'phone' / 'telefono'
+  registro: Registro | null
+  nombreKey: string
+  telefonoKey?: string
   onBack: () => void
   onSaved: () => void
   onSendMessage?: (phone: string, name: string | null) => void
@@ -32,7 +42,6 @@ export default function RecordDetail({
 
   const set = (key: string, value: unknown) => setForm((f) => ({ ...f, [key]: value }))
 
-  // Deja cada campo con el tipo que espera la BD; los vacíos van a null.
   function normalizar(): Record<string, unknown> {
     const out: Record<string, unknown> = {}
     for (const c of campos) {
@@ -42,9 +51,8 @@ export default function RecordDetail({
         if (typeof v === 'string') {
           const arr = v.split(',').map((s) => s.trim()).filter(Boolean)
           v = arr.length ? arr : null
-        } else if (Array.isArray(v)) {
-          v = v.length ? v : null
-        } else v = null
+        } else if (Array.isArray(v)) v = v.length ? v : null
+        else v = null
       } else if (tipo === 'number') {
         v = v == null || v === '' ? null : Number(v)
       } else if (tipo === 'bool') {
@@ -63,19 +71,14 @@ export default function RecordDetail({
   async function guardar() {
     setError(null)
     const datos = normalizar()
-    if (!datos[nombreKey]) {
-      setError('El nombre es obligatorio.')
-      return
-    }
+    if (!datos[nombreKey]) { setError('El nombre es obligatorio.'); return }
     setGuardando(true)
     const resp = registro
       ? await supabase.from(tabla).update(datos).eq('id', registro.id)
       : await supabase.from(tabla).insert(datos)
     setGuardando(false)
-    if (resp.error) {
-      setError(mensajeError(resp.error))
-      return
-    }
+    if (resp.error) { setError(mensajeError(resp.error)); return }
+    toast.success(esNuevo ? 'Ficha creada.' : 'Cambios guardados.')
     onSaved()
   }
 
@@ -87,10 +90,8 @@ export default function RecordDetail({
     setGuardando(true)
     const { error: delError } = await supabase.from(tabla).delete().eq('id', registro.id)
     setGuardando(false)
-    if (delError) {
-      setError(mensajeError(delError))
-      return
-    }
+    if (delError) { setError(mensajeError(delError)); return }
+    toast.success('Ficha borrada.')
     onSaved()
   }
 
@@ -103,87 +104,92 @@ export default function RecordDetail({
 
   const telValor = telefonoKey ? String(form[telefonoKey] ?? '').replace(/\D/g, '') : ''
 
-  function renderControl(c: CampoDef) {
+  function control(c: CampoDef) {
     const tipo = c.tipo ?? 'text'
     const v = form[c.key]
     if (tipo === 'textarea') {
-      return <textarea rows={3} value={(v as string) ?? ''} onChange={(e) => set(c.key, e.target.value)} />
+      return <Textarea rows={3} value={(v as string) ?? ''} onChange={(e) => set(c.key, e.target.value)} />
     }
     if (tipo === 'number') {
-      return (
-        <input type="number" value={v == null || v === '' ? '' : String(v)}
-          onChange={(e) => set(c.key, e.target.value === '' ? null : Number(e.target.value))} />
-      )
+      return <Input type="number" value={v == null || v === '' ? '' : String(v)}
+        onChange={(e) => set(c.key, e.target.value === '' ? null : Number(e.target.value))} />
     }
     if (tipo === 'bool') {
       return (
-        <select value={v ? 'si' : 'no'} onChange={(e) => set(c.key, e.target.value === 'si')}>
-          <option value="si">Sí</option>
-          <option value="no">No</option>
-        </select>
+        <Select value={v ? 'si' : 'no'} onValueChange={(val) => set(c.key, val === 'si')}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="si">Sí</SelectItem>
+            <SelectItem value="no">No</SelectItem>
+          </SelectContent>
+        </Select>
       )
     }
     if (tipo === 'boolnull') {
       return (
-        <select value={v == null ? '' : v ? 'si' : 'no'}
-          onChange={(e) => set(c.key, e.target.value === '' ? null : e.target.value === 'si')}>
-          <option value="">—</option>
-          <option value="si">Sí</option>
-          <option value="no">No</option>
-        </select>
+        <Select value={v == null ? 'null' : v ? 'si' : 'no'}
+          onValueChange={(val) => set(c.key, val === 'null' ? null : val === 'si')}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="null">—</SelectItem>
+            <SelectItem value="si">Sí</SelectItem>
+            <SelectItem value="no">No</SelectItem>
+          </SelectContent>
+        </Select>
       )
     }
     if (tipo === 'list') {
       const texto = Array.isArray(v) ? (v as string[]).join(', ') : ((v as string) ?? '')
-      return <input type="text" value={texto} onChange={(e) => set(c.key, e.target.value)} />
+      return <Input type="text" value={texto} onChange={(e) => set(c.key, e.target.value)} />
     }
-    return (
-      <input type={tipo === 'email' ? 'email' : 'text'} value={(v as string) ?? ''}
-        onChange={(e) => set(c.key, e.target.value)} />
-    )
+    return <Input type={tipo === 'email' ? 'email' : 'text'} value={(v as string) ?? ''}
+      onChange={(e) => set(c.key, e.target.value)} />
   }
 
   return (
-    <main className="offer-detail">
-      <div className="sidebar-back">
-        <button type="button" className="btn-link" onClick={onBack}>← {volverLabel}</button>
-      </div>
+    <div className="space-y-4">
+      <Button variant="ghost" size="sm" onClick={onBack} className="text-muted-foreground">
+        <ArrowLeft className="size-4" /> {volverLabel}
+      </Button>
 
-      <header className="offer-head">
-        <div>
-          <h1>{esNuevo ? `Nuevo ${titulo.toLowerCase()}` : String(form[nombreKey] ?? titulo)}</h1>
-          <p className="hint">{esNuevo ? 'Alta de una ficha nueva' : `Editando ${titulo.toLowerCase()}`}</p>
-        </div>
-        <div className="detail-actions">
-          {telefonoKey && telValor && onSendMessage && (
-            <button type="button" className="btn btn-secondary" onClick={enviarMensaje}>Enviar mensaje</button>
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>{esNuevo ? `Nuevo ${titulo.toLowerCase()}` : String(form[nombreKey] ?? titulo)}</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {esNuevo ? 'Alta de una ficha nueva' : `Editando ${titulo.toLowerCase()}`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {telefonoKey && telValor && onSendMessage && (
+              <Button variant="outline" onClick={enviarMensaje}>
+                <MessageCircle className="size-4" /> Mensaje
+              </Button>
+            )}
+            <Button onClick={() => void guardar()} disabled={guardando}>
+              {guardando ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {campos.map((c) => (
+              <div key={c.key} className={c.ancho === 'full' ? 'sm:col-span-2' : undefined}>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{c.label}</Label>
+                {control(c)}
+              </div>
+            ))}
+          </div>
+          {!esNuevo && (
+            <div className="border-t pt-4">
+              <Button variant="destructive" onClick={() => void borrar()} disabled={guardando}>
+                <Trash2 className="size-4" /> Borrar {titulo.toLowerCase()}
+              </Button>
+            </div>
           )}
-          <button type="button" className="btn btn-primary" disabled={guardando} onClick={() => void guardar()}>
-            {guardando ? 'Guardando…' : 'Guardar'}
-          </button>
-        </div>
-      </header>
-
-      {error && <div className="notice notice-error">{error}</div>}
-
-      <section className="offer-block">
-        <div className="detail-grid">
-          {campos.map((c) => (
-            <label key={c.key} className={`detail-field${c.ancho === 'full' ? ' detail-field-full' : ''}`}>
-              <span className="detail-label">{c.label}</span>
-              {renderControl(c)}
-            </label>
-          ))}
-        </div>
-      </section>
-
-      {!esNuevo && (
-        <section className="offer-block offer-acciones">
-          <button type="button" className="btn btn-danger" disabled={guardando} onClick={() => void borrar()}>
-            Borrar {titulo.toLowerCase()}
-          </button>
-        </section>
-      )}
-    </main>
+        </CardContent>
+      </Card>
+    </div>
   )
 }

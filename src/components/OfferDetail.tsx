@@ -1,28 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { ArrowLeft, Copy, Check } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '../lib/supabase'
 import { sendWhatsApp } from '../lib/whatsapp'
+import { enviarEmail } from '../lib/email'
 import { priorizarEntidades } from '../lib/poma'
 import type { EntidadPuntuada } from '../lib/poma'
 import { cargarNumerosTest } from '../lib/metaTest'
+import { cargarEmailsTest } from '../lib/emailTest'
 import { textoRecollidaConfirmada, textoAlbaran } from '../lib/textos'
 import type { Canalizacion, Excedente } from '../types'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface Props {
   excedente: Excedente
   onBack: () => void
 }
 
-// Copia al portapapeles y avisa brevemente.
-function useCopiar(): [string | null, (texto: string, id: string) => void] {
-  const [copiado, setCopiado] = useState<string | null>(null)
-  const copiar = useCallback((texto: string, id: string) => {
-    void navigator.clipboard.writeText(texto).then(() => {
-      setCopiado(id)
-      setTimeout(() => setCopiado(null), 1500)
-    })
-  }, [])
-  return [copiado, copiar]
+function ofertaHtml(texto: string): string {
+  const esc = texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return `<div style="font-family:'Space Grotesk',sans-serif;color:#234C66"><pre style="white-space:pre-wrap;font-family:inherit;font-size:15px;line-height:1.5;background:#fff;border:1px solid #E0EBC7;border-radius:12px;padding:16px">${esc}</pre></div>`
 }
 
 export default function OfferDetail({ excedente, onBack }: Props) {
@@ -32,12 +32,21 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   const [rankingError, setRankingError] = useState<string | null>(null)
   const [cargandoRanking, setCargandoRanking] = useState(true)
   const [numerosTest, setNumerosTest] = useState<Set<string>>(new Set())
-  const [aviso, setAviso] = useState<string | null>(null)
-  const [copiado, copiar] = useCopiar()
+  const [emailsTest, setEmailsTest] = useState<Set<string>>(new Set())
+  const [emailPorEntidad, setEmailPorEntidad] = useState<Record<string, string | null>>({})
+  const [copiado, setCopiado] = useState<string | null>(null)
 
   const canalizados = canalizaciones.reduce((s, c) => s + Number(c.kg_confirmados ?? 0), 0)
   const total = Number(exc.kg_total ?? 0)
   const faltan = Math.max(0, total - canalizados)
+
+  const copiar = useCallback((texto: string, id: string) => {
+    void navigator.clipboard.writeText(texto).then(() => {
+      setCopiado(id)
+      toast.success('Copiado al portapapeles.')
+      setTimeout(() => setCopiado(null), 1500)
+    })
+  }, [])
 
   const recargar = useCallback(async () => {
     const [e, c] = await Promise.all([
@@ -60,57 +69,55 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     })
   }, [excedente.id])
 
-  // Números dados de alta en Meta: solo a ellos se les puede enviar en test.
   useEffect(() => {
     void cargarNumerosTest().then(setNumerosTest)
+    void cargarEmailsTest().then(setEmailsTest)
+    void supabase.from('entidades').select('id, email').then(({ data }) => {
+      const map: Record<string, string | null> = {}
+      for (const e of data ?? []) map[e.id] = e.email
+      setEmailPorEntidad(map)
+    })
   }, [])
 
-  // Fija disponible_hasta (el intake lo deja null: el productor responde en texto libre).
   async function guardarFecha(valor: string) {
     await supabase.from('excedentes').update({ disponible_hasta: valor || null }).eq('id', excedente.id)
     await recargar()
   }
 
-  // Marca/desmarca el opt-in de una entidad. Es la mecánica de consentimiento en la PoC.
   async function toggleOptIn(entidadId: string, actual: boolean) {
     await supabase.from('entidades').update({ opt_in: !actual }).eq('id', entidadId)
     const r = await priorizarEntidades(excedente.id)
     setRanking(r.ranking)
   }
 
-  // Envía la oferta a una entidad como TEXTO dentro de la ventana de 24 h (la abre
-  // la entidad al escribir). En el entorno de test de Meta las plantillas propias
-  // no son usables (solo hello_world), así que se manda el texto de la oferta; en
-  // producción, con `oferta_excedent` aprobada, se cambiaría a plantilla. Requiere
-  // opt-in y estar en la lista de Meta.
-  async function enviarOferta(ent: EntidadPuntuada) {
+  // Envío por WhatsApp: texto de la oferta dentro de la ventana de 24 h.
+  async function enviarOfertaWhatsApp(ent: EntidadPuntuada) {
     if (!ent.telefono || !ent.opt_in || !numerosTest.has(ent.telefono)) return
-    if (!exc.texto_oferta) {
-      setAviso('Aquesta oferta encara no té el text generat.')
-      return
-    }
-    setAviso(null)
+    if (!exc.texto_oferta) { toast.error('La oferta no tiene texto generado.'); return }
     const r = await sendWhatsApp({ to: ent.telefono, type: 'text', body: exc.texto_oferta })
-    if (r.ok) {
-      setAviso(`Oferta enviada a ${ent.nombre}.`)
-      return
-    }
+    if (r.ok) { toast.success(`Oferta enviada a ${ent.nombre} por WhatsApp.`); return }
     const data = r.data as { error?: unknown; code?: string } | null
-    if (data?.code === 'no_test_recipient') {
-      setAviso(`${ent.nombre} no està a la llista de números de prova de Meta.`)
-    } else if (data?.code === 'unknown_contact') {
-      setAviso(`Encara no tenim conversa amb ${ent.nombre}: ha d'escriure «hola» al número primer.`)
-    } else if (data?.code === 'window_closed') {
-      setAviso(`La finestra de 24h amb ${ent.nombre} està tancada: que escrigui al número per obrir-la.`)
-    } else {
-      const err = data?.error
-      const meta = (typeof err === 'object' && err) as { code?: number } | null
-      setAviso(
-        meta?.code === 131030
-          ? `${ent.nombre} no està a la llista de números de prova de Meta.`
-          : typeof err === 'string' ? err : 'No s’ha pogut enviar.',
-      )
-    }
+    if (data?.code === 'no_test_recipient') toast.error(`${ent.nombre} no está en los números de prueba de Meta.`)
+    else if (data?.code === 'unknown_contact') toast.error(`${ent.nombre} debe escribir «hola» al número primero.`)
+    else if (data?.code === 'window_closed') toast.error(`Ventana de 24h cerrada con ${ent.nombre}.`)
+    else toast.error('No se pudo enviar por WhatsApp.')
+  }
+
+  // Envío por email vía Resend.
+  async function enviarOfertaEmail(ent: EntidadPuntuada) {
+    const email = emailPorEntidad[ent.id]
+    if (!email || !emailsTest.has(email.toLowerCase())) return
+    if (!exc.texto_oferta) { toast.error('La oferta no tiene texto generado.'); return }
+    const r = await enviarEmail({
+      to: email,
+      subject: `Oferta d'excedent disponible: ${exc.producto ?? ''}`,
+      text: exc.texto_oferta,
+      html: ofertaHtml(exc.texto_oferta),
+    })
+    if (r.ok) { toast.success(`Oferta enviada a ${ent.nombre} por email.`); return }
+    const data = r.data as { code?: string } | null
+    if (data?.code === 'no_test_recipient') toast.error(`${email} no está en la lista de correos de prueba.`)
+    else toast.error('No se pudo enviar el email.')
   }
 
   async function altaCanalizacion(e: FormEvent<HTMLFormElement>) {
@@ -120,16 +127,11 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     const entidad_id = String(fd.get('entidad') || '')
     const kg_confirmados = Number(fd.get('kg') || 0)
     if (!entidad_id || !kg_confirmados) return
-
     await supabase.from('canalizaciones').insert({
-      excedente_id: excedente.id,
-      entidad_id,
-      kg_confirmados,
+      excedente_id: excedente.id, entidad_id, kg_confirmados,
       caixes_entregades: Number(fd.get('caixes') || 0) || null,
       comentarios: String(fd.get('comentarios') || '') || null,
     })
-
-    // Recalcular y bloquear si se cubren los kg.
     const nuevoCanalizado = canalizados + kg_confirmados
     if (total > 0 && nuevoCanalizado >= total) {
       await supabase.from('excedentes').update({ estado: 'bloqueada' }).eq('id', excedente.id)
@@ -153,174 +155,157 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     await recargar()
   }
 
-  // Anula una oferta ya creada (equivale a la cancelación del productor por WhatsApp,
-  // pero hecha desde el panel). El intake a medias no llega aquí: se borra la sesión.
   async function cancelarOferta() {
     if (!window.confirm('¿Seguro que quieres cancelar esta oferta? Quedará marcada como cancelada.')) return
     await supabase.from('excedentes').update({ estado: 'cancelada' }).eq('id', excedente.id)
     await recargar()
   }
 
-  const nombrePorId = (id: string | null) =>
-    ranking.find((e) => e.id === id)?.nombre ?? id ?? '—'
-
-  const vencida = exc.disponible_hasta != null &&
-    new Date(exc.disponible_hasta) < new Date() && faltan > 0
+  const nombrePorId = (id: string | null) => ranking.find((e) => e.id === id)?.nombre ?? id ?? '—'
+  const vencida = exc.disponible_hasta != null && new Date(exc.disponible_hasta) < new Date() && faltan > 0
 
   return (
-    <main className="offer-detail">
-      <div className="sidebar-back">
-        <button type="button" className="btn-link" onClick={onBack}>← Ofertas</button>
+    <div className="space-y-4">
+      <Button variant="ghost" size="sm" onClick={onBack} className="text-muted-foreground">
+        <ArrowLeft className="size-4" /> Ofertas
+      </Button>
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold"><code>{exc.id_excedente}</code></h1>
+          <p className="text-sm text-muted-foreground">
+            {exc.producto}{exc.variedad ? ` · ${exc.variedad}` : ''} — {exc.estado}
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-lg font-bold">{canalizados}/{total} kg</div>
+          <span className="text-sm text-muted-foreground">{faltan > 0 ? `falten ${faltan}` : 'complet'}</span>
+        </div>
       </div>
 
-      <header className="offer-head">
-        <div>
-          <h1><code>{exc.id_excedente}</code></h1>
-          <p className="hint">{exc.producto}{exc.variedad ? ` · ${exc.variedad}` : ''} — {exc.estado}</p>
-        </div>
-        <div className="offer-kg">
-          <strong>{canalizados}/{total} kg</strong>
-          <span className="hint">{faltan > 0 ? `falten ${faltan}` : 'complet'}</span>
-        </div>
-      </header>
-
-      {aviso && <div className="notice notice-warning">{aviso}</div>}
-
-      {/* Texto de la oferta, listo para copiar */}
       {exc.texto_oferta && (
-        <section className="offer-block">
-          <div className="offer-block-head">
-            <h2>Texto de la oferta</h2>
-            <button type="button" className="btn btn-secondary"
-              onClick={() => copiar(exc.texto_oferta ?? '', 'oferta')}>
-              {copiado === 'oferta' ? 'Copiado ✓' : 'Copiar texto para el grupo'}
-            </button>
-          </div>
-          <pre className="offer-text">{exc.texto_oferta}</pre>
-        </section>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Texto de la oferta</CardTitle>
+            <Button variant="outline" size="sm" onClick={() => copiar(exc.texto_oferta ?? '', 'oferta')}>
+              {copiado === 'oferta' ? <Check className="size-4" /> : <Copy className="size-4" />}
+              Copiar para el grupo
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <pre className="whitespace-pre-wrap rounded-lg bg-muted p-3 font-sans text-sm">{exc.texto_oferta}</pre>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Fecha de disponibilidad (la usa el job de vencidas) */}
-      <section className="offer-block">
-        <h2>Disponible hasta</h2>
-        <input type="date" defaultValue={exc.disponible_hasta ?? ''}
-          onChange={(ev) => void guardarFecha(ev.target.value)} />
-        {vencida && <span className="notice notice-warning"> Vencida con kg sin cubrir</span>}
-      </section>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Disponible hasta</CardTitle></CardHeader>
+        <CardContent className="flex items-center gap-3">
+          <Input type="date" className="w-auto" defaultValue={exc.disponible_hasta ?? ''}
+            onChange={(ev) => void guardarFecha(ev.target.value)} />
+          {vencida && <span className="text-sm text-destructive">Vencida con kg sin cubrir</span>}
+        </CardContent>
+      </Card>
 
-      {/* Priorización de entidades */}
-      <section className="offer-block">
-        <h2>Entidades priorizadas</h2>
-        {cargandoRanking && <p className="hint">Calculando…</p>}
-        {rankingError && <div className="notice notice-error">{rankingError}</div>}
-        {!cargandoRanking && !rankingError && (
-          <div className="rank-list">
-            {ranking.slice(0, 15).map((ent) => {
-              // Solo se puede enviar a quien esté dado de alta en Meta (entorno de test).
-              const enMeta = ent.telefono != null && numerosTest.has(ent.telefono)
-              return (
-                <div key={ent.id} className={`rank-row${ent.pendiente ? ' rank-pendiente' : ''}`}>
-                  <div className="rank-main">
-                    <span className="rank-score">{ent.puntuacion}</span>
-                    <div>
-                      <div className="rank-nombre">
-                        {ent.nombre}{ent.poblacion ? ` · ${ent.poblacion}` : ''}
-                        {enMeta && <span className="meta-badge">Meta</span>}
-                      </div>
-                      <div className="rank-motivos">{ent.motivos.join(' · ') || 'Sin coincidencias'}</div>
-                    </div>
-                  </div>
-                  <div className="rank-actions">
-                    <label className="optin-toggle">
-                      <input type="checkbox" checked={ent.opt_in}
-                        onChange={() => void toggleOptIn(ent.id, ent.opt_in)} />
-                      opt-in
-                    </label>
-                    <button type="button" className="btn btn-primary"
-                      disabled={!ent.telefono || !ent.opt_in || !enMeta}
-                      title={!ent.telefono ? 'Sin teléfono'
-                        : !ent.opt_in ? 'Sin opt-in'
-                        : !enMeta ? 'No está en los números de prueba de Meta' : undefined}
-                      onClick={() => void enviarOferta(ent)}>
-                      Enviar oferta
-                    </button>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Entidades priorizadas</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {cargandoRanking && <p className="text-sm text-muted-foreground">Calculando…</p>}
+          {rankingError && <p className="text-sm text-destructive">{rankingError}</p>}
+          {!cargandoRanking && !rankingError && ranking.slice(0, 15).map((ent) => {
+            const enMeta = ent.telefono != null && numerosTest.has(ent.telefono)
+            const email = emailPorEntidad[ent.id]
+            const enEmail = email != null && emailsTest.has(email.toLowerCase())
+            return (
+              <div key={ent.id}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2.5 ${ent.pendiente ? 'bg-yellow-50 opacity-80' : ''}`}>
+                <div className="flex items-center gap-3">
+                  <span className="w-6 text-center text-lg font-bold text-primary">{ent.puntuacion}</span>
+                  <div>
+                    <div className="font-medium">{ent.nombre}{ent.poblacion ? ` · ${ent.poblacion}` : ''}</div>
+                    <div className="text-xs text-muted-foreground">{ent.motivos.join(' · ') || 'Sin coincidencias'}</div>
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={ent.opt_in} onChange={() => void toggleOptIn(ent.id, ent.opt_in)} />
+                    opt-in
+                  </label>
+                  <Button size="sm" disabled={!ent.opt_in || !enMeta}
+                    title={!ent.opt_in ? 'Sin opt-in' : !enMeta ? 'No está en Meta' : undefined}
+                    onClick={() => void enviarOfertaWhatsApp(ent)}>WhatsApp</Button>
+                  <Button size="sm" variant="outline" disabled={!enEmail}
+                    title={!email ? 'Sin email' : !enEmail ? 'Email no está en la lista de test' : undefined}
+                    onClick={() => void enviarOfertaEmail(ent)}>Email</Button>
+                </div>
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
 
-      {/* Canalizaciones */}
-      <section className="offer-block">
-        <h2>Canalizaciones</h2>
-        {canalizaciones.length === 0 && <p className="hint">Ninguna todavía.</p>}
-        {canalizaciones.map((c) => {
-          const difiere = c.kg_reales != null && Number(c.kg_reales) !== Number(c.kg_confirmados)
-          return (
-            <div key={c.id} className="canal-row">
-              <span>{nombrePorId(c.entidad_id)}</span>
-              <span>{c.kg_confirmados} kg conf.</span>
-              <label className="canal-reales">
-                reales:
-                <input type="number" defaultValue={c.kg_reales ?? ''} className={difiere ? 'difiere' : ''}
-                  onBlur={(ev) => ev.target.value && void guardarKgReales(c.id, Number(ev.target.value))} />
-              </label>
-              {difiere && <span className="notice notice-warning">difiere</span>}
-              <button type="button" className="btn btn-secondary"
-                onClick={() => copiar(textoAlbaran({
-                  idExcedente: exc.id_excedente ?? '', entitat: nombrePorId(c.entidad_id),
-                  productor: '', producte: exc.producto ?? '',
-                  kgReals: String(c.kg_reales ?? c.kg_confirmados ?? ''),
-                  dataRecollida: c.data_hora_recollida?.slice(0, 10) ?? '',
-                }), `alb-${c.id}`)}>
-                {copiado === `alb-${c.id}` ? 'Copiado ✓' : 'Generar albarà'}
-              </button>
-            </div>
-          )
-        })}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Canalizaciones</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {canalizaciones.length === 0 && <p className="text-sm text-muted-foreground">Ninguna todavía.</p>}
+          {canalizaciones.map((c) => {
+            const difiere = c.kg_reales != null && Number(c.kg_reales) !== Number(c.kg_confirmados)
+            return (
+              <div key={c.id} className="flex flex-wrap items-center gap-3 border-b pb-2 text-sm">
+                <span className="font-medium">{nombrePorId(c.entidad_id)}</span>
+                <span>{c.kg_confirmados} kg conf.</span>
+                <label className="flex items-center gap-1">
+                  reales:
+                  <Input type="number" defaultValue={c.kg_reales ?? ''} className={`h-8 w-20 ${difiere ? 'border-accent' : ''}`}
+                    onBlur={(ev) => ev.target.value && void guardarKgReales(c.id, Number(ev.target.value))} />
+                </label>
+                {difiere && <span className="text-xs text-accent">difiere</span>}
+                <Button variant="outline" size="sm"
+                  onClick={() => copiar(textoAlbaran({
+                    idExcedente: exc.id_excedente ?? '', entitat: nombrePorId(c.entidad_id),
+                    productor: '', producte: exc.producto ?? '',
+                    kgReals: String(c.kg_reales ?? c.kg_confirmados ?? ''),
+                    dataRecollida: c.data_hora_recollida?.slice(0, 10) ?? '',
+                  }), `alb-${c.id}`)}>Albarà</Button>
+              </div>
+            )
+          })}
+          <form className="flex flex-wrap items-center gap-2 pt-2" onSubmit={altaCanalizacion}>
+            <select name="entidad" required defaultValue=""
+              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
+              <option value="" disabled>Entidad…</option>
+              {ranking.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+            </select>
+            <Input name="kg" type="number" placeholder="kg" required className="w-24" />
+            <Input name="caixes" type="number" placeholder="caixes" className="w-24" />
+            <Input name="comentarios" type="text" placeholder="comentarios" className="w-40" />
+            <Button type="submit">Añadir</Button>
+          </form>
+        </CardContent>
+      </Card>
 
-        <form className="canal-form" onSubmit={altaCanalizacion}>
-          <select name="entidad" required defaultValue="">
-            <option value="" disabled>Entidad…</option>
-            {ranking.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-          </select>
-          <input name="kg" type="number" placeholder="kg" required />
-          <input name="caixes" type="number" placeholder="caixes" />
-          <input name="comentarios" type="text" placeholder="comentarios" />
-          <button type="submit" className="btn btn-primary">Añadir</button>
-        </form>
-      </section>
-
-      {/* Bloqueada: RECOLLIDA CONFIRMADA */}
       {exc.estado === 'bloqueada' && (
-        <section className="offer-block">
-          <div className="offer-block-head">
-            <h2>Recollida confirmada</h2>
-            <button type="button" className="btn btn-secondary"
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Recollida confirmada</CardTitle>
+            <Button variant="outline" size="sm"
               onClick={() => copiar(textoRecollidaConfirmada({
                 entitat: canalizaciones.map((c) => nombrePorId(c.entidad_id)).join(', '),
-                dataHora: '', kgRecollits: String(canalizados),
-                kgFalten: String(faltan), comentaris: '',
+                dataHora: '', kgRecollits: String(canalizados), kgFalten: String(faltan), comentaris: '',
               }), 'recollida')}>
-              {copiado === 'recollida' ? 'Copiado ✓' : 'Copiar RECOLLIDA CONFIRMADA'}
-            </button>
-          </div>
-        </section>
+              {copiado === 'recollida' ? <Check className="size-4" /> : <Copy className="size-4" />}
+              Copiar RECOLLIDA CONFIRMADA
+            </Button>
+          </CardHeader>
+        </Card>
       )}
 
-      {/* Anular la oferta: no colocada (no se encontró destino) o cancelada (se anula) */}
       {exc.estado !== 'no_colocada' && exc.estado !== 'cerrada' && exc.estado !== 'cancelada' && (
-        <section className="offer-block offer-acciones">
-          <button type="button" className="btn btn-danger" onClick={() => void marcarNoColocada()}>
-            Marcar como no colocada
-          </button>
-          <button type="button" className="btn btn-danger" onClick={() => void cancelarOferta()}>
-            Cancelar oferta
-          </button>
-        </section>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="destructive" onClick={() => void marcarNoColocada()}>Marcar como no colocada</Button>
+          <Button variant="destructive" onClick={() => void cancelarOferta()}>Cancelar oferta</Button>
+        </div>
       )}
-    </main>
+    </div>
   )
 }

@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { cargarNumerosTest } from '../lib/metaTest'
 import type { Productor } from '../types'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
 
 interface Props {
   onSendMessage: (phone: string, name: string | null) => void
@@ -15,7 +23,6 @@ interface MessageRow {
   created_at: string
 }
 
-// Mensajes sin contestar por teléfono: inbound posteriores al último outbound.
 function countUnanswered(rows: MessageRow[]): Record<string, number> {
   const lastOutbound: Record<string, string> = {}
   for (const row of rows) {
@@ -34,8 +41,6 @@ function countUnanswered(rows: MessageRow[]): Record<string, number> {
   return counts
 }
 
-// Un productor casa con la búsqueda si el texto aparece en su nombre, empresa,
-// teléfono, población o email.
 function casa(p: Productor, q: string): boolean {
   if (!q) return true
   const campos = [p.name, p.empresa, p.phone, p.poblacion, p.email]
@@ -52,65 +57,39 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
 
   useEffect(() => {
     let cancelled = false
-    supabase
-      .from('productores')
-      .select('*')
-      .order('name', { ascending: true })
+    supabase.from('productores').select('*').order('name', { ascending: true })
       .then(({ data, error: loadError }) => {
         if (cancelled) return
         if (loadError) setError(`No se pudieron cargar los productores: ${loadError.message}`)
         else setProducers(data ?? [])
         setLoading(false)
       })
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [])
 
-  // Números dados de alta en Meta: definen quién puede recibir WhatsApp en test.
-  useEffect(() => {
-    void cargarNumerosTest().then(setNumerosTest)
-  }, [])
+  useEffect(() => { void cargarNumerosTest().then(setNumerosTest) }, [])
 
-  // Carga el historial mínimo de mensajes y se suscribe por Realtime a los nuevos
-  // para marcar en rojo los productores con mensajes sin contestar.
   useEffect(() => {
     let cancelled = false
     let rows: MessageRow[] = []
-
-    supabase
-      .from('wa_messages')
-      .select('contact_phone, direction, created_at')
+    supabase.from('wa_messages').select('contact_phone, direction, created_at')
       .then(({ data, error: loadError }) => {
         if (cancelled) return
-        if (loadError) {
-          console.error('wa_messages select:', loadError.message)
-          return
-        }
+        if (loadError) { console.error('wa_messages select:', loadError.message); return }
         rows = (data as MessageRow[]) ?? []
         setUnanswered(countUnanswered(rows))
       })
-
     const channel = supabase
       .channel('wa-messages-productores')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'wa_messages' },
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' },
         (payload) => {
           rows = [...rows, payload.new as MessageRow]
           setUnanswered(countUnanswered(rows))
-        },
-      )
+        })
       .subscribe()
-
-    return () => {
-      cancelled = true
-      void supabase.removeChannel(channel)
-    }
+    return () => { cancelled = true; void supabase.removeChannel(channel) }
   }, [])
 
-  // Filtra por la búsqueda y separa en dos grupos: los que están dados de alta en
-  // Meta (pueden recibir mensajes) y el resto.
   const { enMeta, resto } = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     const filtrados = producers.filter((p) => casa(p, q))
@@ -123,112 +102,97 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
     return { enMeta, resto }
   }, [producers, numerosTest, busqueda])
 
-  function fila(productor: Productor, marcarMeta: boolean) {
-    const sinContestar = productor.phone ? (unanswered[productor.phone] ?? 0) : 0
-    return (
-      <tr key={productor.id}>
-        <td>
-          {productor.name}
-          {marcarMeta && <span className="meta-badge">Meta</span>}
-          {sinContestar > 0 && (
-            <span className="unanswered-badge">{sinContestar} sin contestar</span>
-          )}
-        </td>
-        <td>{productor.email ?? '—'}</td>
-        <td>{productor.phone ? `+${productor.phone}` : '—'}</td>
-        <td>
-          <div className="fila-acciones">
-            <button type="button" className="btn btn-secondary" onClick={() => onOpenDetail(productor)}>
-              Detalle
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => productor.phone && onSendMessage(productor.phone, productor.name)}
-              disabled={!productor.phone}
-              title={productor.phone ? undefined : 'Sin teléfono móvil registrado'}
-            >
-              Enviar mensaje
-            </button>
-          </div>
-        </td>
-      </tr>
-    )
-  }
-
   function tabla(lista: Productor[], marcarMeta: boolean) {
     return (
-      <div className="producers-table-wrap">
-        <table className="producers-table">
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>Email</th>
-              <th>Teléfono</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>{lista.map((p) => fila(p, marcarMeta))}</tbody>
-        </table>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Teléfono</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lista.map((p) => {
+              const sinContestar = p.phone ? (unanswered[p.phone] ?? 0) : 0
+              return (
+                <TableRow key={p.id}>
+                  <TableCell className="font-medium">
+                    <span className="flex flex-wrap items-center gap-2">
+                      {p.name}
+                      {marcarMeta && <Badge variant="secondary">Meta</Badge>}
+                      {sinContestar > 0 && (
+                        <Badge variant="destructive">{sinContestar} sin contestar</Badge>
+                      )}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{p.email ?? '—'}</TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {p.phone ? `+${p.phone}` : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => onOpenDetail(p)}>
+                        Detalle
+                      </Button>
+                      <Button size="sm" disabled={!p.phone}
+                        title={p.phone ? undefined : 'Sin teléfono móvil'}
+                        onClick={() => p.phone && onSendMessage(p.phone, p.name)}>
+                        Mensaje
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
       </div>
     )
   }
 
-  const sinResultados = !loading && !error && enMeta.length === 0 && resto.length === 0
+  const vacio = !loading && !error && enMeta.length === 0 && resto.length === 0
 
   return (
-    <main className="producers">
-      <div className="producers-card">
-        <header className="producers-header">
-          <div className="producers-header-top">
-            <h1>Productores</h1>
-            <button type="button" className="btn btn-primary" onClick={onNew}>Nuevo productor</button>
-          </div>
-          <p className="hint">
-            Los de arriba están dados de alta en Meta y pueden recibir WhatsApp; los de abajo, no.
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div>
+          <CardTitle>Productores</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Arriba, los dados de alta en Meta (pueden recibir WhatsApp); abajo, el resto.
           </p>
-        </header>
+        </div>
+        <Button onClick={onNew}><Plus className="size-4" /> Nuevo</Button>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <Input type="search" placeholder="Buscar por nombre, empresa, teléfono, población o email…"
+          value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
 
-        <input
-          type="search"
-          className="buscador"
-          placeholder="Buscar por nombre, empresa, teléfono, población o email…"
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-        />
-
-        {loading && <p className="hint">Cargando productores…</p>}
-        {error && <div className="notice notice-error">{error}</div>}
-        {sinResultados && (
-          <p className="hint">
-            {producers.length === 0
-              ? 'No hay productores registrados.'
-              : 'Ningún productor casa con la búsqueda.'}
+        {loading && <p className="text-sm text-muted-foreground">Cargando productores…</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {vacio && (
+          <p className="text-sm text-muted-foreground">
+            {producers.length === 0 ? 'No hay productores.' : 'Ningún productor casa con la búsqueda.'}
           </p>
         )}
 
-        {!loading && !error && enMeta.length > 0 && (
-          <section className="producers-group">
-            <h2 className="producers-group-title">
-              Pueden recibir mensajes (en Meta) · {enMeta.length}
-            </h2>
+        {enMeta.length > 0 && (
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold">Pueden recibir (en Meta) · {enMeta.length}</h3>
             {tabla(enMeta, true)}
           </section>
         )}
-
-        {!loading && !error && enMeta.length > 0 && resto.length > 0 && (
-          <hr className="producers-divider" />
-        )}
-
-        {!loading && !error && resto.length > 0 && (
-          <section className="producers-group">
-            <h2 className="producers-group-title">
+        {resto.length > 0 && (
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-muted-foreground">
               No dados de alta en Meta · {resto.length}
-            </h2>
+            </h3>
             {tabla(resto, false)}
           </section>
         )}
-      </div>
-    </main>
+      </CardContent>
+    </Card>
   )
 }

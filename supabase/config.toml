@@ -441,3 +441,17 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/intake-recordatorios/deno.json"
 entrypoint = "./functions/intake-recordatorios/index.ts"
+
+# Envío de ofertas por email (Resend). Requiere sesión: se despliega con verify_jwt.
+[functions.enviar-email]
+enabled = true
+verify_jwt = true
+import_map = "./functions/enviar-email/deno.json"
+entrypoint = "./functions/enviar-email/index.ts"
+
+# Recuperar contraseña: la llama un usuario NO autenticado, se despliega --no-verify-jwt.
+[functions.recuperar-password]
+enabled = true
+verify_jwt = false
+import_map = "./functions/recuperar-password/deno.json"
+entrypoint = "./functions/recuperar-password/index.ts"
