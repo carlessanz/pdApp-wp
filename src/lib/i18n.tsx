@@ -1,0 +1,286 @@
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+
+export type Lang = 'ca' | 'es'
+const STORAGE = 'poma-lang'
+
+type Dict = Record<string, string>
+
+// Català (idioma por defecto)
+const ca: Dict = {
+  // comunes
+  'c.save': 'Desar', 'c.saving': 'Desant…', 'c.delete': 'Esborrar', 'c.cancel': 'Cancel·lar',
+  'c.add': 'Afegir', 'c.new_m': 'Nou', 'c.new_f': 'Nova', 'c.detail': 'Detall', 'c.message': 'Missatge',
+  'c.back': 'Enrere', 'c.loading': 'Carregant…', 'c.none': '—', 'c.search': 'Cercar',
+  'c.send': 'Enviar', 'c.sending': 'Enviant…', 'c.yes': 'Sí', 'c.no': 'No',
+  // nav
+  'nav.dashboard': 'Tauler', 'nav.offers': 'Ofertes', 'nav.producers': 'Productors',
+  'nav.entities': 'Entitats', 'nav.messaging': 'Missatgeria', 'nav.logout': 'Sortir',
+  // login
+  'login.title': 'Consola POMA', 'login.subtitle': 'Accés restringit a l’equip',
+  'login.email': 'Correu', 'login.password': 'Contrasenya', 'login.enter': 'Entrar',
+  'login.entering': 'Entrant…', 'login.forgot': 'L’has oblidat?',
+  'login.recover_title': 'Recuperar contrasenya', 'login.send_link': 'Enviar enllaç',
+  'login.back_login': 'Torna a l’inici de sessió', 'login.new_password': 'Nova contrasenya',
+  'login.save_password': 'Desar contrasenya', 'login.checking': 'Comprovant sessió…',
+  'login.recover_sent': 'Si el correu existeix, rebràs un enllaç per restablir la contrasenya.',
+  'login.pw_short': 'La contrasenya ha de tenir com a mínim 6 caràcters.',
+  'login.pw_updated': 'Contrasenya actualitzada. Ja pots fer servir l’aplicació.',
+  'login.bad_creds': 'Correu o contrasenya incorrectes', 'login.foot': 'POMA · Espigoladors — aprofitament d’excedents',
+  'login.show': 'Mostrar contrasenya', 'login.hide': 'Amagar contrasenya',
+  // dashboard
+  'dash.title': 'Tauler POMA',
+  'dash.subtitle': 'Canalització d’excedents agrícoles per WhatsApp i correu. Enviaments limitats als números/correus de prova.',
+  'dash.how': 'Com funciona', 'dash.glance': 'D’un cop d’ull',
+  'dash.p1t': 'Entrada de l’oferta', 'dash.p1d': 'El productor escriu per WhatsApp i POMA converteix el seu excedent en una oferta.',
+  'dash.p2t': 'Distribució', 'dash.p2d': 'Es prioritzen les entitats per proximitat i capacitat, i se les avisa (WhatsApp o correu).',
+  'dash.p3t': 'Confirmació', 'dash.p3d': 'En cobrir els kg l’oferta es bloqueja i s’envia la RECOLLIDA CONFIRMADA.',
+  'dash.p4t': 'Tancament', 'dash.p4d': 'Es registren els kg reals i albarans; el que no es col·loca es marca amb el seu motiu.',
+  'dash.k_offers': 'Ofertes', 'dash.active': 'actives', 'dash.blocked': 'bloquejades',
+  'dash.closed': 'tancades', 'dash.uncoll': 'no col·locades', 'dash.cancelled': 'cancel·lades',
+  'dash.k_kg': 'Kg', 'dash.channeled': 'canalitzats', 'dash.pending_kg': '{n} pendents en ofertes actives',
+  'dash.k_producers': 'Productors', 'dash.in_base': 'a la base', 'dash.with_mobile': '{n} amb mòbil',
+  'dash.in_meta': '{n} a Meta (poden rebre)', 'dash.k_entities': 'Entitats', 'dash.receivers': 'receptores',
+  'dash.with_optin': '{n} amb opt-in', 'dash.with_email': '{n} amb correu',
+  'dash.k_messages': 'Missatges', 'dash.received': 'rebuts', 'dash.unanswered': '{n} sense contestar',
+  'dash.sessions': '{n} converses a mig fer',
+  'dash.meta_title': 'Números de prova (Meta)',
+  'dash.meta_help': 'En proves, WhatsApp només entrega a aquests números (màx. 5), donats d’alta a Meta. Si és buida, no s’aplica límit.',
+  'dash.email_title': 'Correus de prova (email)',
+  'dash.email_help': 'Les ofertes per correu només s’envien a aquests correus. Cal un domini verificat a Resend. Si és buida, no s’aplica límit.',
+  'dash.ph_phone': '34612345678', 'dash.ph_email': 'correu@domini.com', 'dash.ph_label': 'Etiqueta',
+  'dash.none_yet': 'Encara no n’hi ha cap.',
+  // offers
+  'off.title': 'Ofertes actives', 'off.subtitle': 'Excedents en curs, amb els kg en viu.',
+  'off.search': 'Cercar per referència, producte o estat…',
+  'off.empty': 'No hi ha ofertes actives. Es creen quan un productor escriu per WhatsApp.',
+  'off.no_match': 'Cap oferta coincideix amb la cerca.',
+  'off.c_ref': 'Referència', 'off.c_product': 'Producte', 'off.c_progress': 'Progrés (kg)',
+  'off.c_state': 'Estat', 'off.open': 'Obrir', 'off.falten': 'falten {n}', 'off.complet': 'complet',
+  'off.st_published': 'Publicada', 'off.st_partial': 'Parcial', 'off.st_blocked': 'Bloquejada',
+  'off.st_draft': 'Esborrany', 'off.st_cancelled': 'Cancel·lada', 'off.st_uncoll': 'No col·locada', 'off.st_closed': 'Tancada',
+  // producers
+  'prod.title': 'Productors',
+  'prod.subtitle': 'A dalt, els donats d’alta a Meta (poden rebre WhatsApp); a baix, la resta.',
+  'prod.search': 'Cercar per nom, empresa, telèfon, població o correu…',
+  'prod.empty': 'No hi ha productors.', 'prod.no_match': 'Cap productor coincideix amb la cerca.',
+  'prod.grp_meta': 'Poden rebre (a Meta) · {n}', 'prod.grp_rest': 'No donats d’alta a Meta · {n}',
+  'prod.c_name': 'Nom', 'prod.c_email': 'Correu', 'prod.c_phone': 'Telèfon', 'prod.c_actions': 'Accions',
+  'prod.unanswered': '{n} sense contestar', 'prod.no_phone': 'Sense telèfon mòbil',
+  // entities
+  'ent.title': 'Entitats receptores', 'ent.subtitle': 'La etiqueta «Meta» marca les que poden rebre missatges.',
+  'ent.search': 'Cercar per nom, població, àrea, telèfon, correu o contacte…',
+  'ent.empty': 'No hi ha entitats.', 'ent.no_match': 'Cap entitat coincideix amb la cerca.',
+  'ent.c_name': 'Nom', 'ent.c_town': 'Població', 'ent.c_phone': 'Telèfon', 'ent.c_email': 'Correu',
+  'ent.c_modality': 'Modalitat', 'ent.c_prio': 'Prio.', 'ent.c_actions': 'Accions', 'ent.no_phone': 'Sense telèfon',
+  // record detail (CRUD)
+  'rec.new': 'Nou {x}', 'rec.new_f': 'Nova {x}', 'rec.alta': 'Alta d’una fitxa nova',
+  'rec.editing': 'Editant {x}', 'rec.delete_x': 'Esborrar {x}',
+  'rec.confirm_delete': 'Segur que vols esborrar «{name}»? És irreversible.',
+  'rec.name_required': 'El nom és obligatori.',
+  'rec.err_unique': 'Ja existeix una fitxa amb aquest telèfon, correu o nom (han de ser únics).',
+  'rec.created': 'Fitxa creada.', 'rec.saved': 'Canvis desats.', 'rec.deleted': 'Fitxa esborrada.',
+  'rec.producer': 'productor', 'rec.entity': 'entitat',
+  // offer detail
+  'od.back': 'Ofertes', 'od.offer_text': 'Text de l’oferta', 'od.copy_group': 'Copiar per al grup',
+  'od.copied': 'Copiat al porta-retalls.', 'od.available_until': 'Disponible fins',
+  'od.expired': 'Vençuda amb kg sense cobrir', 'od.prioritized': 'Entitats prioritzades',
+  'od.calculating': 'Calculant…', 'od.no_match_ent': 'Sense coincidències', 'od.optin': 'opt-in',
+  'od.whatsapp': 'WhatsApp', 'od.email': 'Correu', 'od.channelings': 'Canalitzacions',
+  'od.none_yet': 'Cap encara.', 'od.reals': 'reals:', 'od.differs': 'difereix', 'od.albara': 'Albarà',
+  'od.entity_ph': 'Entitat…', 'od.kg_ph': 'kg', 'od.boxes_ph': 'caixes', 'od.comments_ph': 'comentaris',
+  'od.recollida': 'Recollida confirmada', 'od.copy_recollida': 'Copiar RECOLLIDA CONFIRMADA',
+  'od.mark_uncoll': 'Marcar com a no col·locada', 'od.cancel_offer': 'Cancel·lar oferta',
+  'od.confirm_cancel': 'Segur que vols cancel·lar aquesta oferta? Quedarà marcada com a cancel·lada.',
+  'od.prompt_uncoll': 'Motiu pel qual no s’ha col·locat:',
+  'od.no_text': 'L’oferta no té text generat.', 'od.sent_wa': 'Oferta enviada a {name} per WhatsApp.',
+  'od.sent_email': 'Oferta enviada a {name} per correu.', 'od.no_test_meta': '{name} no és als números de prova de Meta.',
+  'od.must_write': '{name} ha d’escriure «hola» al número primer.', 'od.window_closed': 'Finestra de 24h tancada amb {name}.',
+  'od.no_send_wa': 'No s’ha pogut enviar per WhatsApp.', 'od.email_no_test': '{email} no és a la llista de correus de prova.',
+  'od.no_send_email': 'No s’ha pogut enviar el correu.', 'od.no_optin': 'Sense opt-in', 'od.not_meta': 'No és a Meta',
+  'od.no_email': 'Sense correu', 'od.email_not_test': 'El correu no és a la llista de prova',
+  // messaging
+  'msg.contacts': 'Contactes', 'msg.no_contacts': 'Encara no hi ha contactes.',
+  'msg.name_ph': 'Nom (opcional)', 'msg.save_contact': 'Desar contacte', 'msg.retry': 'Reintentar',
+  'msg.phone_invalid': 'Telèfon no vàlid: E.164 sense +, p. ex. 34612345678',
+  'msg.exists': 'Ja existeix un contacte amb aquest telèfon',
+  'msg.select': 'Selecciona un contacte per veure la conversa',
+  'msg.optin': 'Opt-in', 'msg.no_consent': 'Sense consentiment', 'msg.no_messages': 'Encara no hi ha missatges.',
+  'msg.loading': 'Carregant missatges…', 'msg.template': 'Plantilla', 'msg.first_msg': 'Enviar 1r missatge',
+  'msg.write_ph': 'Escriu un missatge…', 'msg.start_first_ph': 'Primer inicia amb la plantilla…',
+  'msg.banner': '{name} encara no t’ha escrit, així que WhatsApp no deixa enviar-li text lliure. Prem «Enviar 1r missatge» per fer el primer contacte; quan respongui s’obre la finestra de 24 h i ja podràs escriure-li.',
+  'msg.tooltip': 'WhatsApp no et deixa escriure tu primer. Aquest botó envia una plantilla aprovada (en proves, «hello_world») per fer el primer contacte. Quan la persona respongui, s’obre la finestra de 24 h i podràs escriure-li amb normalitat.',
+  'msg.this_contact': 'Aquest contacte',
+  'msg.w_closed': 'Fora de la finestra de 24 hores: només es pot escriure text lliure després que el contacte hagi escrit.',
+  'msg.w_optin': 'Aquest contacte no ha donat opt-in; no se li pot enviar una plantilla. Ho pot fer escrivint ALTA.',
+  'msg.w_unknown': 'El contacte encara no existeix a la base de dades.',
+  'msg.w_unauth': 'La teva sessió ha caducat o no tens permís. Torna a iniciar sessió.',
+  // campos CRUD
+  'f.name': 'Nom', 'f.empresa': 'Empresa', 'f.phone': 'Telèfon (E.164 sense +, 34…)',
+  'f.telefono_alt': 'Telèfon alternatiu', 'f.email': 'Correu', 'f.nif': 'NIF', 'f.direccion': 'Adreça',
+  'f.codigo_postal': 'Codi postal', 'f.poblacion': 'Població', 'f.area_geografica': 'Àrea geogràfica',
+  'f.tipo_empresa': 'Tipus d’empresa', 'f.codigo': 'Codi', 'f.conveni': 'Conveni', 'f.visitado': 'Visitat',
+  'f.data_alta': 'Data alta', 'f.productos_habituales': 'Productes habituals (separa amb comes)',
+  'f.comentario': 'Comentari', 'f.activo': 'Actiu', 'f.nombre': 'Nom', 'f.familia': 'Família',
+  'f.prioritat': 'Prioritat', 'f.estat': 'Estat', 'f.gestio': 'Gestió',
+  'f.modalitat': 'Modalitat d’aprofitament', 'f.telefono2': 'Telèfon 2', 'f.telefono3': 'Telèfon 3',
+  'f.email2': 'Correu 2', 'f.contacto': 'Contacte', 'f.contacto2': 'Contacte 2', 'f.horario': 'Horari',
+  'f.calendari_repartiment': 'Calendari repartiment', 'f.productes_frescos': 'Accepta frescos',
+  'f.productes_frescos_txt': 'Frescos (text original)', 'f.transport_plataforma': 'Transport plataforma',
+  'f.transport_plataforma_txt': 'Transport (text original)', 'f.descarrega_toro': 'Descàrrega amb toro',
+  'f.descarrega_toro_txt': 'Descàrrega (text original)', 'f.comentarios': 'Comentaris',
+  'f.opt_in': 'Opt-in (consentiment)',
+}
+
+// Español
+const es: Dict = {
+  'c.save': 'Guardar', 'c.saving': 'Guardando…', 'c.delete': 'Borrar', 'c.cancel': 'Cancelar',
+  'c.add': 'Añadir', 'c.new_m': 'Nuevo', 'c.new_f': 'Nueva', 'c.detail': 'Detalle', 'c.message': 'Mensaje',
+  'c.back': 'Atrás', 'c.loading': 'Cargando…', 'c.none': '—', 'c.search': 'Buscar',
+  'c.send': 'Enviar', 'c.sending': 'Enviando…', 'c.yes': 'Sí', 'c.no': 'No',
+  'nav.dashboard': 'Panel', 'nav.offers': 'Ofertas', 'nav.producers': 'Productores',
+  'nav.entities': 'Entidades', 'nav.messaging': 'Mensajería', 'nav.logout': 'Salir',
+  'login.title': 'Consola POMA', 'login.subtitle': 'Acceso restringido al equipo',
+  'login.email': 'Email', 'login.password': 'Contraseña', 'login.enter': 'Entrar',
+  'login.entering': 'Entrando…', 'login.forgot': '¿La has olvidado?',
+  'login.recover_title': 'Recuperar contraseña', 'login.send_link': 'Enviar enlace',
+  'login.back_login': 'Volver al inicio de sesión', 'login.new_password': 'Nueva contraseña',
+  'login.save_password': 'Guardar contraseña', 'login.checking': 'Comprobando sesión…',
+  'login.recover_sent': 'Si el correo existe, recibirás un enlace para restablecer la contraseña.',
+  'login.pw_short': 'La contraseña debe tener al menos 6 caracteres.',
+  'login.pw_updated': 'Contraseña actualizada. Ya puedes usar la aplicación.',
+  'login.bad_creds': 'Email o contraseña incorrectos', 'login.foot': 'POMA · Espigoladors — aprovechamiento de excedentes',
+  'login.show': 'Mostrar contraseña', 'login.hide': 'Ocultar contraseña',
+  'dash.title': 'Panel POMA',
+  'dash.subtitle': 'Canalización de excedentes agrícolas por WhatsApp y email. Envíos limitados a los números/correos de prueba.',
+  'dash.how': 'Cómo funciona', 'dash.glance': 'De un vistazo',
+  'dash.p1t': 'Entrada de la oferta', 'dash.p1d': 'El productor escribe por WhatsApp y POMA convierte su excedente en una oferta.',
+  'dash.p2t': 'Distribución', 'dash.p2d': 'Se priorizan las entidades por cercanía y capacidad, y se les avisa (WhatsApp o email).',
+  'dash.p3t': 'Confirmación', 'dash.p3d': 'Al cubrir los kg la oferta se bloquea y se envía la RECOLLIDA CONFIRMADA.',
+  'dash.p4t': 'Cierre', 'dash.p4d': 'Se registran los kg reales y albaranes; lo que no se coloca se marca con su motivo.',
+  'dash.k_offers': 'Ofertas', 'dash.active': 'activas', 'dash.blocked': 'bloqueadas',
+  'dash.closed': 'cerradas', 'dash.uncoll': 'no colocadas', 'dash.cancelled': 'canceladas',
+  'dash.k_kg': 'Kg', 'dash.channeled': 'canalizados', 'dash.pending_kg': '{n} pendientes en ofertas activas',
+  'dash.k_producers': 'Productores', 'dash.in_base': 'en la base', 'dash.with_mobile': '{n} con móvil',
+  'dash.in_meta': '{n} en Meta (pueden recibir)', 'dash.k_entities': 'Entidades', 'dash.receivers': 'receptoras',
+  'dash.with_optin': '{n} con opt-in', 'dash.with_email': '{n} con email',
+  'dash.k_messages': 'Mensajes', 'dash.received': 'recibidos', 'dash.unanswered': '{n} sin contestar',
+  'dash.sessions': '{n} conversaciones a medias',
+  'dash.meta_title': 'Números de prueba (Meta)',
+  'dash.meta_help': 'En pruebas, WhatsApp solo entrega a estos números (máx. 5), dados de alta en Meta. Si está vacía, no se aplica límite.',
+  'dash.email_title': 'Correos de prueba (email)',
+  'dash.email_help': 'Las ofertas por email solo se envían a estos correos. Requiere un dominio verificado en Resend. Si está vacía, no se aplica límite.',
+  'dash.ph_phone': '34612345678', 'dash.ph_email': 'correo@dominio.com', 'dash.ph_label': 'Etiqueta',
+  'dash.none_yet': 'Todavía no hay ninguno.',
+  'off.title': 'Ofertas activas', 'off.subtitle': 'Excedentes en curso, con los kg en vivo.',
+  'off.search': 'Buscar por referencia, producto o estado…',
+  'off.empty': 'No hay ofertas activas. Se crean cuando un productor escribe por WhatsApp.',
+  'off.no_match': 'Ninguna oferta coincide con la búsqueda.',
+  'off.c_ref': 'Referencia', 'off.c_product': 'Producto', 'off.c_progress': 'Progreso (kg)',
+  'off.c_state': 'Estado', 'off.open': 'Abrir', 'off.falten': 'faltan {n}', 'off.complet': 'completo',
+  'off.st_published': 'Publicada', 'off.st_partial': 'Parcial', 'off.st_blocked': 'Bloqueada',
+  'off.st_draft': 'Borrador', 'off.st_cancelled': 'Cancelada', 'off.st_uncoll': 'No colocada', 'off.st_closed': 'Cerrada',
+  'prod.title': 'Productores',
+  'prod.subtitle': 'Arriba, los dados de alta en Meta (pueden recibir WhatsApp); abajo, el resto.',
+  'prod.search': 'Buscar por nombre, empresa, teléfono, población o email…',
+  'prod.empty': 'No hay productores.', 'prod.no_match': 'Ningún productor coincide con la búsqueda.',
+  'prod.grp_meta': 'Pueden recibir (en Meta) · {n}', 'prod.grp_rest': 'No dados de alta en Meta · {n}',
+  'prod.c_name': 'Nombre', 'prod.c_email': 'Email', 'prod.c_phone': 'Teléfono', 'prod.c_actions': 'Acciones',
+  'prod.unanswered': '{n} sin contestar', 'prod.no_phone': 'Sin teléfono móvil',
+  'ent.title': 'Entidades receptoras', 'ent.subtitle': 'El badge «Meta» marca las que pueden recibir mensajes.',
+  'ent.search': 'Buscar por nombre, población, área, teléfono, email o contacto…',
+  'ent.empty': 'No hay entidades.', 'ent.no_match': 'Ninguna entidad coincide con la búsqueda.',
+  'ent.c_name': 'Nombre', 'ent.c_town': 'Población', 'ent.c_phone': 'Teléfono', 'ent.c_email': 'Email',
+  'ent.c_modality': 'Modalidad', 'ent.c_prio': 'Prio.', 'ent.c_actions': 'Acciones', 'ent.no_phone': 'Sin teléfono',
+  'rec.new': 'Nuevo {x}', 'rec.new_f': 'Nueva {x}', 'rec.alta': 'Alta de una ficha nueva',
+  'rec.editing': 'Editando {x}', 'rec.delete_x': 'Borrar {x}',
+  'rec.confirm_delete': '¿Seguro que quieres borrar «{name}»? Es irreversible.',
+  'rec.name_required': 'El nombre es obligatorio.',
+  'rec.err_unique': 'Ya existe una ficha con ese teléfono, email o nombre (deben ser únicos).',
+  'rec.created': 'Ficha creada.', 'rec.saved': 'Cambios guardados.', 'rec.deleted': 'Ficha borrada.',
+  'rec.producer': 'productor', 'rec.entity': 'entidad',
+  'od.back': 'Ofertas', 'od.offer_text': 'Texto de la oferta', 'od.copy_group': 'Copiar para el grupo',
+  'od.copied': 'Copiado al portapapeles.', 'od.available_until': 'Disponible hasta',
+  'od.expired': 'Vencida con kg sin cubrir', 'od.prioritized': 'Entidades priorizadas',
+  'od.calculating': 'Calculando…', 'od.no_match_ent': 'Sin coincidencias', 'od.optin': 'opt-in',
+  'od.whatsapp': 'WhatsApp', 'od.email': 'Email', 'od.channelings': 'Canalizaciones',
+  'od.none_yet': 'Ninguna todavía.', 'od.reals': 'reales:', 'od.differs': 'difiere', 'od.albara': 'Albarán',
+  'od.entity_ph': 'Entidad…', 'od.kg_ph': 'kg', 'od.boxes_ph': 'cajas', 'od.comments_ph': 'comentarios',
+  'od.recollida': 'Recogida confirmada', 'od.copy_recollida': 'Copiar RECOLLIDA CONFIRMADA',
+  'od.mark_uncoll': 'Marcar como no colocada', 'od.cancel_offer': 'Cancelar oferta',
+  'od.confirm_cancel': '¿Seguro que quieres cancelar esta oferta? Quedará marcada como cancelada.',
+  'od.prompt_uncoll': 'Motivo por el que no se ha colocado:',
+  'od.no_text': 'La oferta no tiene texto generado.', 'od.sent_wa': 'Oferta enviada a {name} por WhatsApp.',
+  'od.sent_email': 'Oferta enviada a {name} por email.', 'od.no_test_meta': '{name} no está en los números de prueba de Meta.',
+  'od.must_write': '{name} debe escribir «hola» al número primero.', 'od.window_closed': 'Ventana de 24h cerrada con {name}.',
+  'od.no_send_wa': 'No se pudo enviar por WhatsApp.', 'od.email_no_test': '{email} no está en la lista de correos de prueba.',
+  'od.no_send_email': 'No se pudo enviar el email.', 'od.no_optin': 'Sin opt-in', 'od.not_meta': 'No está en Meta',
+  'od.no_email': 'Sin email', 'od.email_not_test': 'El email no está en la lista de test',
+  'msg.contacts': 'Contactos', 'msg.no_contacts': 'No hay contactos todavía.',
+  'msg.name_ph': 'Nombre (opcional)', 'msg.save_contact': 'Guardar contacto', 'msg.retry': 'Reintentar',
+  'msg.phone_invalid': 'Teléfono inválido: E.164 sin +, ej. 34612345678',
+  'msg.exists': 'Ya existe un contacto con ese teléfono',
+  'msg.select': 'Selecciona un contacto para ver su conversación',
+  'msg.optin': 'Opt-in', 'msg.no_consent': 'Sin consentimiento', 'msg.no_messages': 'Sin mensajes todavía.',
+  'msg.loading': 'Cargando mensajes…', 'msg.template': 'Plantilla', 'msg.first_msg': 'Enviar 1r mensaje',
+  'msg.write_ph': 'Escribe un mensaje…', 'msg.start_first_ph': 'Primero inicia con la plantilla…',
+  'msg.banner': '{name} aún no te ha escrito, así que WhatsApp no deja enviarle texto libre. Pulsa «Enviar 1r mensaje» para hacer el primer contacto; cuando responda se abre la ventana de 24 h y ya podrás escribirle.',
+  'msg.tooltip': 'WhatsApp no te deja escribir tú primero. Este botón envía una plantilla aprobada (en test, «hello_world») para hacer el primer contacto. Cuando la persona responda, se abre la ventana de 24 h y podrás escribirle con normalidad.',
+  'msg.this_contact': 'Este contacto',
+  'msg.w_closed': 'Fuera de la ventana de 24 horas: solo se puede escribir texto libre después de que el contacto haya escrito.',
+  'msg.w_optin': 'Este contacto no ha dado opt-in; no se le puede enviar una plantilla. Puede darlo escribiendo ALTA.',
+  'msg.w_unknown': 'El contacto no existe todavía en la base de datos.',
+  'msg.w_unauth': 'Tu sesión ha caducado o no tienes permiso. Vuelve a iniciar sesión.',
+  'f.name': 'Nombre', 'f.empresa': 'Empresa', 'f.phone': 'Teléfono (E.164 sin +, 34…)',
+  'f.telefono_alt': 'Teléfono alternativo', 'f.email': 'Email', 'f.nif': 'NIF', 'f.direccion': 'Dirección',
+  'f.codigo_postal': 'Código postal', 'f.poblacion': 'Población', 'f.area_geografica': 'Área geográfica',
+  'f.tipo_empresa': 'Tipo de empresa', 'f.codigo': 'Código', 'f.conveni': 'Conveni', 'f.visitado': 'Visitado',
+  'f.data_alta': 'Fecha alta', 'f.productos_habituales': 'Productos habituales (separa con comas)',
+  'f.comentario': 'Comentario', 'f.activo': 'Activo', 'f.nombre': 'Nombre', 'f.familia': 'Familia',
+  'f.prioritat': 'Prioridad', 'f.estat': 'Estado', 'f.gestio': 'Gestión',
+  'f.modalitat': 'Modalidad de aprovechamiento', 'f.telefono2': 'Teléfono 2', 'f.telefono3': 'Teléfono 3',
+  'f.email2': 'Email 2', 'f.contacto': 'Contacto', 'f.contacto2': 'Contacto 2', 'f.horario': 'Horario',
+  'f.calendari_repartiment': 'Calendario reparto', 'f.productes_frescos': 'Acepta frescos',
+  'f.productes_frescos_txt': 'Frescos (texto original)', 'f.transport_plataforma': 'Transporte plataforma',
+  'f.transport_plataforma_txt': 'Transporte (texto original)', 'f.descarrega_toro': 'Descarga con toro',
+  'f.descarrega_toro_txt': 'Descarga (texto original)', 'f.comentarios': 'Comentarios',
+  'f.opt_in': 'Opt-in (consentimiento)',
+}
+
+const DICTS: Record<Lang, Dict> = { ca, es }
+
+interface I18nCtx {
+  lang: Lang
+  setLang: (l: Lang) => void
+  t: (key: string, params?: Record<string, string | number>) => string
+}
+
+const Ctx = createContext<I18nCtx | null>(null)
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [lang, setLangState] = useState<Lang>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE) : null
+    return saved === 'es' || saved === 'ca' ? saved : 'ca' // por defecto català
+  })
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l)
+    localStorage.setItem(STORAGE, l)
+    document.documentElement.lang = l
+  }, [])
+  const t = useCallback(
+    (key: string, params?: Record<string, string | number>) => {
+      let s = DICTS[lang][key] ?? DICTS.ca[key] ?? key
+      if (params) for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, String(v))
+      return s
+    },
+    [lang],
+  )
+  const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t])
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+}
+
+export function useT(): I18nCtx {
+  const ctx = useContext(Ctx)
+  if (!ctx) throw new Error('useT debe usarse dentro de I18nProvider')
+  return ctx
+}

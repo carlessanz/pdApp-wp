@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
+import { useT } from '../lib/i18n'
 import type { Excedente } from '../types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,20 +17,21 @@ interface Props {
 type KgPorExcedente = Record<string, number>
 const ACTIVOS = ['borrador', 'publicada', 'parcial', 'bloqueada']
 
-function estadoLabel(estado: string): { texto: string; clase: string } {
+function estadoLabel(estado: string): { key: string; clase: string } {
   switch (estado) {
-    case 'publicada': return { texto: 'Publicada', clase: 'bg-blue-100 text-blue-800' }
-    case 'parcial': return { texto: 'Parcial', clase: 'bg-yellow-100 text-yellow-800' }
-    case 'bloqueada': return { texto: 'Bloquejada', clase: 'bg-green-100 text-green-800' }
-    case 'borrador': return { texto: 'Esborrany', clase: 'bg-muted text-muted-foreground' }
-    case 'cancelada': return { texto: 'Cancel·lada', clase: 'bg-red-100 text-red-700' }
-    case 'no_colocada': return { texto: 'No col·locada', clase: 'bg-muted text-muted-foreground' }
-    case 'cerrada': return { texto: 'Tancada', clase: 'bg-muted text-muted-foreground' }
-    default: return { texto: estado, clase: 'bg-muted text-muted-foreground' }
+    case 'publicada': return { key: 'off.st_published', clase: 'bg-blue-100 text-blue-800' }
+    case 'parcial': return { key: 'off.st_partial', clase: 'bg-yellow-100 text-yellow-800' }
+    case 'bloqueada': return { key: 'off.st_blocked', clase: 'bg-green-100 text-green-800' }
+    case 'borrador': return { key: 'off.st_draft', clase: 'bg-muted text-muted-foreground' }
+    case 'cancelada': return { key: 'off.st_cancelled', clase: 'bg-red-100 text-red-700' }
+    case 'no_colocada': return { key: 'off.st_uncoll', clase: 'bg-muted text-muted-foreground' }
+    case 'cerrada': return { key: 'off.st_closed', clase: 'bg-muted text-muted-foreground' }
+    default: return { key: estado, clase: 'bg-muted text-muted-foreground' }
   }
 }
 
 export default function OffersList({ onOpen }: Props) {
+  const { t } = useT()
   const [offers, setOffers] = useState<Excedente[]>([])
   const [kg, setKg] = useState<KgPorExcedente>({})
   const [loading, setLoading] = useState(true)
@@ -40,14 +42,11 @@ export default function OffersList({ onOpen }: Props) {
     setLoading(true)
     setError(null)
     const [ofertas, canalizaciones] = await Promise.all([
-      supabase.from('excedentes').select('*').in('estado', ACTIVOS)
-        .order('created_at', { ascending: false }),
+      supabase.from('excedentes').select('*').in('estado', ACTIVOS).order('created_at', { ascending: false }),
       supabase.from('canalizaciones').select('excedente_id, kg_confirmados'),
     ])
-    if (ofertas.error) {
-      setError(`No se pudieron cargar las ofertas: ${ofertas.error.message}`)
-      setOffers([])
-    } else setOffers(ofertas.data ?? [])
+    if (ofertas.error) { setError(ofertas.error.message); setOffers([]) }
+    else setOffers(ofertas.data ?? [])
     const acc: KgPorExcedente = {}
     for (const c of canalizaciones.data ?? []) {
       if (!c.excedente_id) continue
@@ -71,41 +70,36 @@ export default function OffersList({ onOpen }: Props) {
     const q = busqueda.trim().toLowerCase()
     if (!q) return offers
     return offers.filter((o) => {
-      const campos = [o.id_excedente, o.producto, o.variedad, estadoLabel(o.estado).texto]
+      const campos = [o.id_excedente, o.producto, o.variedad, t(estadoLabel(o.estado).key)]
       return campos.some((c) => (c ?? '').toLowerCase().includes(q))
     })
-  }, [offers, busqueda])
+  }, [offers, busqueda, t])
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Ofertas activas</CardTitle>
-        <p className="mt-1 text-sm text-muted-foreground">Excedentes en curso, con los kg en vivo.</p>
+        <CardTitle>{t('off.title')}</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">{t('off.subtitle')}</p>
       </CardHeader>
       <CardContent className="space-y-6">
-        <Input type="search" placeholder="Buscar por referencia, producto o estado…"
-          value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
-
-        {loading && <p className="text-sm text-muted-foreground">Cargando ofertas…</p>}
+        <Input type="search" placeholder={t('off.search')} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        {loading && <p className="text-sm text-muted-foreground">{t('c.loading')}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
         {!loading && !error && offers.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No hay ofertas activas. Se crean cuando un productor escribe por WhatsApp.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('off.empty')}</p>
         )}
         {!loading && !error && offers.length > 0 && filtradas.length === 0 && (
-          <p className="text-sm text-muted-foreground">Ninguna oferta casa con la búsqueda.</p>
+          <p className="text-sm text-muted-foreground">{t('off.no_match')}</p>
         )}
-
         {filtradas.length > 0 && (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Referencia</TableHead>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>Progreso (kg)</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>{t('off.c_ref')}</TableHead>
+                  <TableHead>{t('off.c_product')}</TableHead>
+                  <TableHead>{t('off.c_progress')}</TableHead>
+                  <TableHead>{t('off.c_state')}</TableHead>
                   <TableHead className="text-right"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -125,16 +119,16 @@ export default function OffersList({ onOpen }: Props) {
                           <div className="h-full bg-green-600" style={{ width: `${pct}%` }} />
                         </div>
                         <span className="mt-1 block text-xs text-muted-foreground">
-                          {canalizados}/{total} kg{faltan > 0 ? ` · falten ${faltan}` : ' · complet'}
+                          {canalizados}/{total} kg · {faltan > 0 ? t('off.falten', { n: faltan }) : t('off.complet')}
                         </span>
                       </TableCell>
                       <TableCell>
                         <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', est.clase)}>
-                          {est.texto}
+                          {t(est.key)}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" onClick={() => onOpen(o)}>Abrir</Button>
+                        <Button size="sm" onClick={() => onOpen(o)}>{t('off.open')}</Button>
                       </TableCell>
                     </TableRow>
                   )

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { LogOut } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import { cn } from './lib/utils'
+import { useT } from './lib/i18n'
+import type { Lang } from './lib/i18n'
 import type { Entidad, Excedente, Productor, WaContact } from './types'
 import AuthGate from './components/AuthGate'
 import Dashboard from './components/Dashboard'
@@ -17,15 +19,16 @@ import OfferDetail from './components/OfferDetail'
 type View = 'dashboard' | 'ofertas' | 'productores' | 'entidades' | 'mensajeria'
 type Registro = Record<string, unknown> & { id: string }
 
-const NAV: { id: View; label: string }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'ofertas', label: 'Ofertas' },
-  { id: 'productores', label: 'Productores' },
-  { id: 'entidades', label: 'Entidades' },
-  { id: 'mensajeria', label: 'Mensajería' },
+const NAV: { id: View; labelKey: string }[] = [
+  { id: 'dashboard', labelKey: 'nav.dashboard' },
+  { id: 'ofertas', labelKey: 'nav.offers' },
+  { id: 'productores', labelKey: 'nav.producers' },
+  { id: 'entidades', labelKey: 'nav.entities' },
+  { id: 'mensajeria', labelKey: 'nav.messaging' },
 ]
 
 export default function App() {
+  const { t, lang, setLang } = useT()
   const [view, setView] = useState<View>('dashboard')
   const [selectedOffer, setSelectedOffer] = useState<Excedente | null>(null)
   const [contacts, setContacts] = useState<WaContact[]>([])
@@ -114,16 +117,25 @@ export default function App() {
                   : 'text-secondary/80 hover:bg-white/10 hover:text-secondary',
               )}
             >
-              {n.label}
+              {t(n.labelKey)}
             </button>
           ))}
         </nav>
+        <div className="flex items-center gap-0.5 rounded-md border border-white/15 p-0.5">
+          {(['ca', 'es'] as Lang[]).map((l) => (
+            <button key={l} type="button" onClick={() => setLang(l)}
+              className={cn('rounded px-1.5 py-0.5 text-xs font-semibold uppercase transition-colors',
+                lang === l ? 'bg-secondary text-primary' : 'text-secondary/70 hover:text-secondary')}>
+              {l}
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           onClick={() => void supabase.auth.signOut()}
           className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-secondary/80 hover:bg-white/10 hover:text-secondary"
         >
-          <LogOut className="size-4" /> Salir
+          <LogOut className="size-4" /> {t('nav.logout')}
         </button>
       </div>
     </header>
@@ -147,7 +159,7 @@ export default function App() {
               <Conversation key={selected.phone} contact={selected} />
             ) : (
               <main className="grid flex-1 place-items-center text-muted-foreground">
-                <p>Selecciona un contacto para ver su conversación</p>
+                <p>{t('msg.select')}</p>
               </main>
             )}
           </div>
@@ -166,8 +178,9 @@ export default function App() {
             {view === 'productores' &&
               (productorNuevo || productorDetalle ? (
                 <RecordDetail
-                  titulo="Productor"
-                  volverLabel="Productores"
+                  tipoKey="rec.producer"
+                  femenino={false}
+                  volverKey="nav.producers"
                   tabla="productores"
                   campos={PRODUCTOR_CAMPOS}
                   registro={(productorDetalle as unknown as Registro) ?? null}
@@ -187,8 +200,9 @@ export default function App() {
             {view === 'entidades' &&
               (entidadNueva || entidadDetalle ? (
                 <RecordDetail
-                  titulo="Entidad"
-                  volverLabel="Entidades"
+                  tipoKey="rec.entity"
+                  femenino={true}
+                  volverKey="nav.entities"
                   tabla="entidades"
                   campos={ENTIDAD_CAMPOS}
                   registro={(entidadDetalle as unknown as Registro) ?? null}

@@ -72,7 +72,11 @@ src/
     whatsapp.ts                sendWhatsApp(): llama a la Edge Function; nunca lanza
     poma.ts                    priorizarEntidades(): llama a la Edge Function con el JWT
     metaTest.ts                Lista de números de prueba de Meta (whitelist de envío, §9)
-    crudCampos.ts              Definiciones de campos para el CRUD (productores/entidades)
+    emailTest.ts               Lista de correos de prueba (whitelist del canal email)
+    email.ts                   enviarEmail(): llama a la Edge Function enviar-email
+    i18n.tsx                   Sistema de traducciones (ca/es, per defecte ca; useT, §7)
+    utils.ts                   cn() (shadcn)
+    crudCampos.ts              Definiciones de campos para el CRUD (claves i18n f.*)
     textos.ts                  RECOLLIDA CONFIRMADA y albarán (los compone el panel)
   components/
     AuthGate.tsx               Login real con Supabase Auth (ver §9)
@@ -396,8 +400,12 @@ con `disponible_hasta` vencida >24 h y kg sin cubrir. No actúa hasta que el pan
   `/^[1-9]\d{6,14}$/`. El `+` se añade solo al *mostrar*. Móviles españoles = `346…`/`347…`.
 - **Endpoint de Meta**: `https://graph.facebook.com/{WHATSAPP_API_VERSION}/{PHONE_ID}/messages`.
   La versión se lee del entorno (default `v23.0`), no está hardcodeada.
-- **Idioma**: interfaz y comentarios en **castellano**; los textos que se envían por WhatsApp,
-  en **catalán**. Identificadores en inglés salvo los del dominio (`productores`, `entidades`,
+- **Idioma**: la **interfaz es bilingüe català/castellà** (sistema i18n propio en
+  `src/lib/i18n.tsx`: `useT()`, diccionaris `ca`/`es`, **per defecte `ca`**, selector a la barra
+  superior, preferència a `localStorage`). Els textos de la interfície viuen com a **claus**
+  (p. ex. `nav.offers`, `f.email`); les etiquetes de camps del CRUD també (`crudCampos.ts` guarda
+  claus `f.*`). Els **comentaris del codi** en castellà; els **missatges de WhatsApp**, en català
+  (no passen per i18n). Identificadors en inglés salvo los del dominio (`productores`, `entidades`,
   `excedentes`, `canalizaciones`).
 - **Secretos**: nunca en el código. Env vars, siempre.
 - **`docs/` y `scripts/data/` nunca entran en git.** El primero es material de trabajo; el

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ArrowLeft, MessageCircle, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../lib/supabase'
+import { useT } from '../lib/i18n'
 import type { CampoDef } from '../lib/crudCampos'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,8 +16,9 @@ import {
 type Registro = Record<string, unknown> & { id: string }
 
 interface Props {
-  titulo: string
-  volverLabel: string
+  tipoKey: string // 'rec.producer' | 'rec.entity'
+  femenino: boolean
+  volverKey: string // 'nav.producers' | 'nav.entities'
   tabla: 'productores' | 'entidades'
   campos: CampoDef[]
   registro: Registro | null
@@ -27,37 +29,38 @@ interface Props {
   onSendMessage?: (phone: string, name: string | null) => void
 }
 
-function mensajeError(error: { code?: string; message: string }): string {
-  if (error.code === '23505') return 'Ya existe una ficha con ese teléfono, email o nombre (deben ser únicos).'
-  return error.message
-}
-
 export default function RecordDetail({
-  titulo, volverLabel, tabla, campos, registro, nombreKey, telefonoKey, onBack, onSaved, onSendMessage,
+  tipoKey, femenino, volverKey, tabla, campos, registro, nombreKey, telefonoKey, onBack, onSaved, onSendMessage,
 }: Props) {
+  const { t } = useT()
   const esNuevo = registro == null
   const [form, setForm] = useState<Record<string, unknown>>(() => ({ ...(registro ?? {}) }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const tipo = t(tipoKey)
   const set = (key: string, value: unknown) => setForm((f) => ({ ...f, [key]: value }))
+
+  function mensajeError(err: { code?: string; message: string }): string {
+    return err.code === '23505' ? t('rec.err_unique') : err.message
+  }
 
   function normalizar(): Record<string, unknown> {
     const out: Record<string, unknown> = {}
     for (const c of campos) {
-      const tipo = c.tipo ?? 'text'
+      const tp = c.tipo ?? 'text'
       let v = form[c.key]
-      if (tipo === 'list') {
+      if (tp === 'list') {
         if (typeof v === 'string') {
           const arr = v.split(',').map((s) => s.trim()).filter(Boolean)
           v = arr.length ? arr : null
         } else if (Array.isArray(v)) v = v.length ? v : null
         else v = null
-      } else if (tipo === 'number') {
+      } else if (tp === 'number') {
         v = v == null || v === '' ? null : Number(v)
-      } else if (tipo === 'bool') {
+      } else if (tp === 'bool') {
         v = Boolean(v)
-      } else if (tipo === 'boolnull') {
+      } else if (tp === 'boolnull') {
         v = v == null ? null : Boolean(v)
       } else {
         const s = typeof v === 'string' ? v.trim() : v
@@ -71,27 +74,27 @@ export default function RecordDetail({
   async function guardar() {
     setError(null)
     const datos = normalizar()
-    if (!datos[nombreKey]) { setError('El nombre es obligatorio.'); return }
+    if (!datos[nombreKey]) { setError(t('rec.name_required')); return }
     setGuardando(true)
     const resp = registro
       ? await supabase.from(tabla).update(datos).eq('id', registro.id)
       : await supabase.from(tabla).insert(datos)
     setGuardando(false)
     if (resp.error) { setError(mensajeError(resp.error)); return }
-    toast.success(esNuevo ? 'Ficha creada.' : 'Cambios guardados.')
+    toast.success(esNuevo ? t('rec.created') : t('rec.saved'))
     onSaved()
   }
 
   async function borrar() {
     if (!registro) return
-    const nombre = String(form[nombreKey] ?? 'esta ficha')
-    if (!window.confirm(`¿Seguro que quieres borrar «${nombre}»? Es irreversible.`)) return
+    const nombre = String(form[nombreKey] ?? tipo)
+    if (!window.confirm(t('rec.confirm_delete', { name: nombre }))) return
     setError(null)
     setGuardando(true)
     const { error: delError } = await supabase.from(tabla).delete().eq('id', registro.id)
     setGuardando(false)
     if (delError) { setError(mensajeError(delError)); return }
-    toast.success('Ficha borrada.')
+    toast.success(t('rec.deleted'))
     onSaved()
   }
 
@@ -105,48 +108,41 @@ export default function RecordDetail({
   const telValor = telefonoKey ? String(form[telefonoKey] ?? '').replace(/\D/g, '') : ''
 
   function control(c: CampoDef) {
-    const tipo = c.tipo ?? 'text'
+    const tp = c.tipo ?? 'text'
     const v = form[c.key]
-    if (tipo === 'textarea') {
-      return <Textarea rows={3} value={(v as string) ?? ''} onChange={(e) => set(c.key, e.target.value)} />
-    }
-    if (tipo === 'number') {
+    if (tp === 'textarea') return <Textarea rows={3} value={(v as string) ?? ''} onChange={(e) => set(c.key, e.target.value)} />
+    if (tp === 'number') {
       return <Input type="number" value={v == null || v === '' ? '' : String(v)}
         onChange={(e) => set(c.key, e.target.value === '' ? null : Number(e.target.value))} />
     }
-    if (tipo === 'bool') {
+    if (tp === 'bool') {
       return (
         <Select value={v ? 'si' : 'no'} onValueChange={(val) => set(c.key, val === 'si')}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="si">Sí</SelectItem>
-            <SelectItem value="no">No</SelectItem>
+            <SelectItem value="si">{t('c.yes')}</SelectItem>
+            <SelectItem value="no">{t('c.no')}</SelectItem>
           </SelectContent>
         </Select>
       )
     }
-    if (tipo === 'boolnull') {
+    if (tp === 'boolnull') {
       return (
         <Select value={v == null ? 'null' : v ? 'si' : 'no'}
           onValueChange={(val) => set(c.key, val === 'null' ? null : val === 'si')}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="null">—</SelectItem>
-            <SelectItem value="si">Sí</SelectItem>
-            <SelectItem value="no">No</SelectItem>
+            <SelectItem value="si">{t('c.yes')}</SelectItem>
+            <SelectItem value="no">{t('c.no')}</SelectItem>
           </SelectContent>
         </Select>
       )
     }
-    if (tipo === 'list') {
-      const texto = Array.isArray(v) ? (v as string[]).join(', ') : ((v as string) ?? '')
-      return <Input type="text" value={texto} onChange={(e) => set(c.key, e.target.value)} />
-    }
-    if (tipo === 'select') {
+    if (tp === 'select') {
       const val = (v as string) ?? ''
       return (
-        <Select value={val === '' ? '__none' : val}
-          onValueChange={(nv) => set(c.key, nv === '__none' ? null : nv)}>
+        <Select value={val === '' ? '__none' : val} onValueChange={(nv) => set(c.key, nv === '__none' ? null : nv)}>
           <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__none">—</SelectItem>
@@ -155,32 +151,37 @@ export default function RecordDetail({
         </Select>
       )
     }
-    return <Input type={tipo === 'email' ? 'email' : 'text'} value={(v as string) ?? ''}
-      onChange={(e) => set(c.key, e.target.value)} />
+    if (tp === 'list') {
+      const texto = Array.isArray(v) ? (v as string[]).join(', ') : ((v as string) ?? '')
+      return <Input type="text" value={texto} onChange={(e) => set(c.key, e.target.value)} />
+    }
+    return <Input type={tp === 'email' ? 'email' : 'text'} value={(v as string) ?? ''} onChange={(e) => set(c.key, e.target.value)} />
   }
 
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" onClick={onBack} className="text-muted-foreground">
-        <ArrowLeft className="size-4" /> {volverLabel}
+        <ArrowLeft className="size-4" /> {t(volverKey)}
       </Button>
 
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle>{esNuevo ? `Nuevo ${titulo.toLowerCase()}` : String(form[nombreKey] ?? titulo)}</CardTitle>
+            <CardTitle>
+              {esNuevo ? (femenino ? t('rec.new_f', { x: tipo }) : t('rec.new', { x: tipo })) : String(form[nombreKey] ?? tipo)}
+            </CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              {esNuevo ? 'Alta de una ficha nueva' : `Editando ${titulo.toLowerCase()}`}
+              {esNuevo ? t('rec.alta') : t('rec.editing', { x: tipo })}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {telefonoKey && telValor && onSendMessage && (
               <Button variant="outline" onClick={enviarMensaje}>
-                <MessageCircle className="size-4" /> Mensaje
+                <MessageCircle className="size-4" /> {t('c.message')}
               </Button>
             )}
             <Button onClick={() => void guardar()} disabled={guardando}>
-              {guardando ? 'Guardando…' : 'Guardar'}
+              {guardando ? t('c.saving') : t('c.save')}
             </Button>
           </div>
         </CardHeader>
@@ -189,7 +190,7 @@ export default function RecordDetail({
           <div className="grid gap-4 sm:grid-cols-2">
             {campos.map((c) => (
               <div key={c.key} className={c.ancho === 'full' ? 'sm:col-span-2' : undefined}>
-                <Label className="mb-1.5 block text-xs text-muted-foreground">{c.label}</Label>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{t(c.label)}</Label>
                 {control(c)}
               </div>
             ))}
@@ -197,7 +198,7 @@ export default function RecordDetail({
           {!esNuevo && (
             <div className="border-t pt-4">
               <Button variant="destructive" onClick={() => void borrar()} disabled={guardando}>
-                <Trash2 className="size-4" /> Borrar {titulo.toLowerCase()}
+                <Trash2 className="size-4" /> {t('rec.delete_x', { x: tipo })}
               </Button>
             </div>
           )}

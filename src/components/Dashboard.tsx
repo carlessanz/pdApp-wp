@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useT } from '../lib/i18n'
 import {
   anadirNumeroTest, borrarNumeroTest, listarNumerosTest, type MetaTestRecipient,
 } from '../lib/metaTest'
@@ -15,13 +16,6 @@ interface MsgRow { contact_phone: string; direction: 'inbound' | 'outbound'; cre
 interface ExcRow { id: string; estado: string; kg_total: number | null }
 
 const ACTIVOS = ['borrador', 'publicada', 'parcial', 'bloqueada']
-
-const PROCESO = [
-  { n: 1, titulo: 'Entrada de la oferta', texto: 'El productor escribe por WhatsApp y POMA convierte su excedente en una oferta.' },
-  { n: 2, titulo: 'Distribución', texto: 'Se priorizan las entidades por cercanía y capacidad, y se les avisa (WhatsApp o email).' },
-  { n: 3, titulo: 'Confirmación', texto: 'Al cubrir los kg la oferta se bloquea y se envía la RECOLLIDA CONFIRMADA.' },
-  { n: 4, titulo: 'Cierre', texto: 'Se registran los kg reales y albaranes; lo que no se coloca se marca con su motivo.' },
-]
 
 function contarSinContestar(rows: MsgRow[]): number {
   const lastOutbound: Record<string, string> = {}
@@ -41,7 +35,6 @@ function contarSinContestar(rows: MsgRow[]): number {
 
 const soloDigitos = (s: string | null) => (s ?? '').replace(/\D/g, '')
 
-// KPI reutilizable
 function Kpi({ titulo, valor, sub, detalle }: {
   titulo: string; valor: number | string; sub: string; detalle: { texto: string; destacado?: boolean }[]
 }) {
@@ -63,21 +56,16 @@ function Kpi({ titulo, valor, sub, detalle }: {
   )
 }
 
-// Gestor de whitelist genérico (Meta y email comparten forma).
-function GestorWhitelist({ titulo, ayuda, items, placeholderClave, placeholderEtiqueta, max, onAdd, onDelete }: {
-  titulo: string
-  ayuda: string
-  items: { clave: string; etiqueta: string | null }[]
-  placeholderClave: string
-  placeholderEtiqueta: string
-  max: number
+function GestorWhitelist({ titulo, ayuda, items, placeholderClave, placeholderEtiqueta, max, onAdd, onDelete, addLabel, noneLabel }: {
+  titulo: string; ayuda: string; items: { clave: string; etiqueta: string | null }[]
+  placeholderClave: string; placeholderEtiqueta: string; max: number
+  addLabel: string; noneLabel: string
   onAdd: (clave: string, etiqueta: string) => Promise<string | null>
   onDelete: (clave: string) => Promise<void>
 }) {
   const [clave, setClave] = useState('')
   const [etiqueta, setEtiqueta] = useState('')
   const [error, setError] = useState<string | null>(null)
-
   return (
     <Card>
       <CardHeader>
@@ -86,7 +74,7 @@ function GestorWhitelist({ titulo, ayuda, items, placeholderClave, placeholderEt
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1.5">
-          {items.length === 0 && <p className="text-sm text-muted-foreground">Todavía no hay ninguno.</p>}
+          {items.length === 0 && <p className="text-sm text-muted-foreground">{noneLabel}</p>}
           {items.map((r) => (
             <div key={r.clave} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm">
               <span className="font-medium tabular-nums">{r.clave}</span>
@@ -107,7 +95,7 @@ function GestorWhitelist({ titulo, ayuda, items, placeholderClave, placeholderEt
               const err = await onAdd(clave, etiqueta)
               if (err) { setError(err); return }
               setClave(''); setEtiqueta('')
-            }}>Añadir</Button>
+            }}>{addLabel}</Button>
           </div>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
@@ -117,6 +105,7 @@ function GestorWhitelist({ titulo, ayuda, items, placeholderClave, placeholderEt
 }
 
 export default function Dashboard() {
+  const { t } = useT()
   const [prodPhones, setProdPhones] = useState<(string | null)[]>([])
   const [entidades, setEntidades] = useState<{ telefono: string | null; email: string | null; opt_in: boolean | null }[]>([])
   const [excedentes, setExcedentes] = useState<ExcRow[]>([])
@@ -188,24 +177,29 @@ export default function Dashboard() {
     }
   }, [excedentes, canalKg, kgConfirmadosTotal, prodPhones, entidades, mensajes, intakeActivas, numerosSet])
 
+  const PROCESO = [
+    { n: 1, tk: 'dash.p1t', dk: 'dash.p1d' },
+    { n: 2, tk: 'dash.p2t', dk: 'dash.p2d' },
+    { n: 3, tk: 'dash.p3t', dk: 'dash.p3d' },
+    { n: 4, tk: 'dash.p4t', dk: 'dash.p4d' },
+  ]
+
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Panel POMA</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Canalización de excedentes agrícolas por WhatsApp y email. Envíos limitados a los números/correos de prueba.
-        </p>
+        <h1 className="text-2xl font-bold">{t('dash.title')}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t('dash.subtitle')}</p>
       </div>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Cómo funciona</h2>
+        <h2 className="text-lg font-semibold">{t('dash.how')}</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {PROCESO.map((p) => (
             <Card key={p.n}>
               <CardContent className="pt-6">
                 <span className="inline-flex size-7 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{p.n}</span>
-                <h3 className="mt-2 text-sm font-semibold">{p.titulo}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{p.texto}</p>
+                <h3 className="mt-2 text-sm font-semibold">{t(p.tk)}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{t(p.dk)}</p>
               </CardContent>
             </Card>
           ))}
@@ -213,30 +207,30 @@ export default function Dashboard() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">De un vistazo</h2>
-        {loading ? <p className="text-sm text-muted-foreground">Cargando datos…</p> : (
+        <h2 className="text-lg font-semibold">{t('dash.glance')}</h2>
+        {loading ? <p className="text-sm text-muted-foreground">{t('c.loading')}</p> : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Kpi titulo="Ofertas" valor={kpis.ofertas.activas} sub="activas" detalle={[
-              { texto: `${kpis.ofertas.bloqueadas} bloquejades` },
-              { texto: `${kpis.ofertas.cerradas} tancades` },
-              { texto: `${kpis.ofertas.noColocadas} no col·locades` },
-              { texto: `${kpis.ofertas.canceladas} cancel·lades` },
+            <Kpi titulo={t('dash.k_offers')} valor={kpis.ofertas.activas} sub={t('dash.active')} detalle={[
+              { texto: `${kpis.ofertas.bloqueadas} ${t('dash.blocked')}` },
+              { texto: `${kpis.ofertas.cerradas} ${t('dash.closed')}` },
+              { texto: `${kpis.ofertas.noColocadas} ${t('dash.uncoll')}` },
+              { texto: `${kpis.ofertas.canceladas} ${t('dash.cancelled')}` },
             ]} />
-            <Kpi titulo="Kg" valor={kpis.kg.canalizados} sub="canalitzats" detalle={[
-              { texto: `${kpis.kg.pendientes} pendents en ofertes actives` },
+            <Kpi titulo={t('dash.k_kg')} valor={kpis.kg.canalizados} sub={t('dash.channeled')} detalle={[
+              { texto: t('dash.pending_kg', { n: kpis.kg.pendientes }) },
             ]} />
-            <Kpi titulo="Productores" valor={kpis.productores.total} sub="en la base" detalle={[
-              { texto: `${kpis.productores.conMovil} con móvil` },
-              { texto: `${kpis.productores.enMeta} en Meta (pueden recibir)`, destacado: true },
+            <Kpi titulo={t('dash.k_producers')} valor={kpis.productores.total} sub={t('dash.in_base')} detalle={[
+              { texto: t('dash.with_mobile', { n: kpis.productores.conMovil }) },
+              { texto: t('dash.in_meta', { n: kpis.productores.enMeta }), destacado: true },
             ]} />
-            <Kpi titulo="Entidades" valor={kpis.entidades.total} sub="receptoras" detalle={[
-              { texto: `${kpis.entidades.conOptIn} con opt-in` },
-              { texto: `${kpis.entidades.conEmail} con email` },
-              { texto: `${kpis.entidades.enMeta} en Meta (pueden recibir)`, destacado: true },
+            <Kpi titulo={t('dash.k_entities')} valor={kpis.entidades.total} sub={t('dash.receivers')} detalle={[
+              { texto: t('dash.with_optin', { n: kpis.entidades.conOptIn }) },
+              { texto: t('dash.with_email', { n: kpis.entidades.conEmail }) },
+              { texto: t('dash.in_meta', { n: kpis.entidades.enMeta }), destacado: true },
             ]} />
-            <Kpi titulo="Mensajes" valor={kpis.mensajes.recibidos} sub="recibidos" detalle={[
-              { texto: `${kpis.mensajes.sinContestar} sin contestar` },
-              { texto: `${kpis.mensajes.intakeActivas} sesiones de intake` },
+            <Kpi titulo={t('dash.k_messages')} valor={kpis.mensajes.recibidos} sub={t('dash.received')} detalle={[
+              { texto: t('dash.unanswered', { n: kpis.mensajes.sinContestar }) },
+              { texto: t('dash.sessions', { n: kpis.mensajes.intakeActivas }) },
             ]} />
           </div>
         )}
@@ -244,18 +238,18 @@ export default function Dashboard() {
 
       <section className="grid gap-3 lg:grid-cols-2">
         <GestorWhitelist
-          titulo="Números de prueba (Meta)"
-          ayuda="En test, WhatsApp solo entrega a estos números (máx. 5), dados de alta en Meta. Si está vacía, no se aplica límite."
+          titulo={t('dash.meta_title')} ayuda={t('dash.meta_help')}
           items={lista.map((r) => ({ clave: r.phone, etiqueta: r.etiqueta }))}
-          placeholderClave="34612345678" placeholderEtiqueta="Etiqueta" max={5}
+          placeholderClave={t('dash.ph_phone')} placeholderEtiqueta={t('dash.ph_label')} max={5}
+          addLabel={t('c.add')} noneLabel={t('dash.none_yet')}
           onAdd={async (c, e) => { const err = await anadirNumeroTest(c, e); if (!err) setLista(await listarNumerosTest()); return err }}
           onDelete={async (c) => { await borrarNumeroTest(c); setLista(await listarNumerosTest()) }}
         />
         <GestorWhitelist
-          titulo="Correos de prueba (email)"
-          ayuda="Las ofertas por email solo se mandan a estos correos. Requiere un dominio verificado en Resend. Si está vacía, no se aplica límite."
+          titulo={t('dash.email_title')} ayuda={t('dash.email_help')}
           items={listaEmail.map((r) => ({ clave: r.email, etiqueta: r.etiqueta }))}
-          placeholderClave="correo@dominio.com" placeholderEtiqueta="Etiqueta" max={20}
+          placeholderClave={t('dash.ph_email')} placeholderEtiqueta={t('dash.ph_label')} max={20}
+          addLabel={t('c.add')} noneLabel={t('dash.none_yet')}
           onAdd={async (c, e) => { const err = await anadirEmailTest(c, e); if (!err) setListaEmail(await listarEmailsTest()); return err }}
           onDelete={async (c) => { await borrarEmailTest(c); setListaEmail(await listarEmailsTest()) }}
         />

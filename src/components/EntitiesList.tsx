@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { cargarNumerosTest } from '../lib/metaTest'
+import { useT } from '../lib/i18n'
 import type { Entidad } from '../types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,11 +22,12 @@ const soloDigitos = (s: string | null) => (s ?? '').replace(/\D/g, '')
 
 function casa(e: Entidad, q: string): boolean {
   if (!q) return true
-  const campos = [e.nombre, e.poblacion, e.area_geografica, e.telefono, e.email, e.contacto]
+  const campos = [e.nombre, e.poblacion, e.area_geografica, e.telefono, e.email, e.contacto, e.modalitat]
   return campos.some((c) => (c ?? '').toLowerCase().includes(q))
 }
 
 export default function EntitiesList({ onSendMessage, onOpenDetail, onNew }: Props) {
+  const { t } = useT()
   const [entidades, setEntidades] = useState<Entidad[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +39,7 @@ export default function EntitiesList({ onSendMessage, onOpenDetail, onNew }: Pro
     supabase.from('entidades').select('*').order('nombre', { ascending: true })
       .then(({ data, error: loadError }) => {
         if (cancelled) return
-        if (loadError) setError(`No se pudieron cargar las entidades: ${loadError.message}`)
+        if (loadError) setError(loadError.message)
         else setEntidades(data ?? [])
         setLoading(false)
       })
@@ -55,36 +57,30 @@ export default function EntitiesList({ onSendMessage, onOpenDetail, onNew }: Pro
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <div>
-          <CardTitle>Entidades receptoras</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            El badge «Meta» marca las que pueden recibir mensajes.
-          </p>
+          <CardTitle>{t('ent.title')}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">{t('ent.subtitle')}</p>
         </div>
-        <Button onClick={onNew}><Plus className="size-4" /> Nueva</Button>
+        <Button onClick={onNew}><Plus className="size-4" /> {t('c.new_f')}</Button>
       </CardHeader>
       <CardContent className="space-y-6">
-        <Input type="search" placeholder="Buscar por nombre, población, área, teléfono, email o contacto…"
-          value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
-
-        {loading && <p className="text-sm text-muted-foreground">Cargando entidades…</p>}
+        <Input type="search" placeholder={t('ent.search')} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        {loading && <p className="text-sm text-muted-foreground">{t('c.loading')}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
         {!loading && !error && filtradas.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            {entidades.length === 0 ? 'No hay entidades.' : 'Ninguna entidad casa con la búsqueda.'}
-          </p>
+          <p className="text-sm text-muted-foreground">{entidades.length === 0 ? t('ent.empty') : t('ent.no_match')}</p>
         )}
-
         {filtradas.length > 0 && (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Población</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Prio.</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead>{t('ent.c_name')}</TableHead>
+                  <TableHead>{t('ent.c_town')}</TableHead>
+                  <TableHead>{t('ent.c_modality')}</TableHead>
+                  <TableHead>{t('ent.c_phone')}</TableHead>
+                  <TableHead>{t('ent.c_email')}</TableHead>
+                  <TableHead>{t('ent.c_prio')}</TableHead>
+                  <TableHead className="text-right">{t('ent.c_actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -100,23 +96,19 @@ export default function EntitiesList({ onSendMessage, onOpenDetail, onNew }: Pro
                         </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{e.poblacion ?? '—'}</TableCell>
-                      <TableCell className="whitespace-nowrap tabular-nums">
-                        {tel ? `+${tel}` : '—'}
+                      <TableCell>
+                        {e.modalitat ? <Badge variant="outline">{e.modalitat}</Badge> : <span className="text-muted-foreground">—</span>}
                       </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{tel ? `+${tel}` : '—'}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        <div className="max-w-[180px] break-all leading-tight">{e.email ?? '—'}</div>
+                        <div className="max-w-[170px] break-all leading-tight">{e.email ?? '—'}</div>
                       </TableCell>
                       <TableCell>{e.prioritat ?? '—'}</TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={() => onOpenDetail(e)}>
-                            Detalle
-                          </Button>
-                          <Button size="sm" disabled={!tel}
-                            title={tel ? undefined : 'Sin teléfono'}
-                            onClick={() => tel && onSendMessage(tel, e.nombre)}>
-                            Mensaje
-                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => onOpenDetail(e)}>{t('c.detail')}</Button>
+                          <Button size="sm" disabled={!tel} title={tel ? undefined : t('ent.no_phone')}
+                            onClick={() => tel && onSendMessage(tel, e.nombre)}>{t('c.message')}</Button>
                         </div>
                       </TableCell>
                     </TableRow>

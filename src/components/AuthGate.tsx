@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import { Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase, supabaseUrl } from '../lib/supabase'
+import { useT } from '../lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 type Modo = 'login' | 'recuperar' | 'recovery'
 
 export default function AuthGate({ children }: { children: ReactNode }) {
+  const { t } = useT()
   const [session, setSession] = useState<Session | null>(null)
   const [cargando, setCargando] = useState(true)
   const [modo, setModo] = useState<Modo>('login')
@@ -27,7 +29,6 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       setCargando(false)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((evento, nueva) => {
-      // El enlace de recuperación abre la app con una sesión temporal y este evento.
       if (evento === 'PASSWORD_RECOVERY') setModo('recovery')
       setSession(nueva)
     })
@@ -39,17 +40,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     if (ocupado) return
     setOcupado(true)
     setError(null)
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    })
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     setOcupado(false)
     if (authError) {
-      setError(
-        authError.message === 'Invalid login credentials'
-          ? 'Email o contraseña incorrectos'
-          : authError.message,
-      )
+      setError(authError.message === 'Invalid login credentials' ? t('login.bad_creds') : authError.message)
       setPassword('')
     }
   }
@@ -59,14 +53,13 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     if (ocupado) return
     setOcupado(true)
     setError(null)
-    // La función responde 200 siempre (no revela si el email existe).
     await fetch(`${supabaseUrl}/functions/v1/recuperar-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim() }),
     }).catch(() => null)
     setOcupado(false)
-    toast.success('Si el correo existe, recibirás un enlace para restablecer la contraseña.')
+    toast.success(t('login.recover_sent'))
     setModo('login')
   }
 
@@ -74,7 +67,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     e.preventDefault()
     if (ocupado) return
     if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.')
+      setError(t('login.pw_short'))
       return
     }
     setOcupado(true)
@@ -85,7 +78,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       setError(updError.message)
       return
     }
-    toast.success('Contraseña actualizada. Ya puedes usar la aplicación.')
+    toast.success(t('login.pw_updated'))
     setModo('login')
     setPassword('')
   }
@@ -96,7 +89,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       onClick={() => setVerPassword((v) => !v)}
       className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
       tabIndex={-1}
-      aria-label={verPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+      aria-label={verPassword ? t('login.hide') : t('login.show')}
     >
       {verPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
     </button>
@@ -105,13 +98,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (cargando) {
     return (
       <div className="grid min-h-screen place-items-center bg-primary">
-        <p className="text-secondary/80">Comprobando sesión…</p>
+        <p className="text-secondary/80">{t('login.checking')}</p>
       </div>
     )
   }
 
-  // En modo recovery mostramos el formulario aunque haya sesión temporal.
-  // El botón de cerrar sesión vive en la topbar de la app (App.tsx).
   if (session && modo !== 'recovery') {
     return <>{children}</>
   }
@@ -123,13 +114,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         <Card className="rounded-2xl">
           {modo === 'recovery' ? (
             <>
-              <CardHeader>
-                <CardTitle>Nueva contraseña</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>{t('login.new_password')}</CardTitle></CardHeader>
               <CardContent>
                 <form className="grid gap-4" onSubmit={cambiarPassword}>
                   <div className="grid gap-2">
-                    <Label htmlFor="np">Nueva contraseña</Label>
+                    <Label htmlFor="np">{t('login.new_password')}</Label>
                     <div className="relative">
                       <Input id="np" type={verPassword ? 'text' : 'password'} value={password}
                         onChange={(e) => { setPassword(e.target.value); setError(null) }}
@@ -138,7 +127,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                     </div>
                   </div>
                   <Button type="submit" disabled={ocupado || !password}>
-                    {ocupado ? 'Guardando…' : 'Guardar contraseña'}
+                    {ocupado ? t('c.saving') : t('login.save_password')}
                   </Button>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </form>
@@ -146,23 +135,20 @@ export default function AuthGate({ children }: { children: ReactNode }) {
             </>
           ) : modo === 'recuperar' ? (
             <>
-              <CardHeader>
-                <CardTitle>Recuperar contraseña</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>{t('login.recover_title')}</CardTitle></CardHeader>
               <CardContent>
                 <form className="grid gap-4" onSubmit={solicitarRecuperacion}>
                   <div className="grid gap-2">
-                    <Label htmlFor="re">Email</Label>
+                    <Label htmlFor="re">{t('login.email')}</Label>
                     <Input id="re" type="email" value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      autoComplete="username" autoFocus required />
+                      onChange={(e) => setEmail(e.target.value)} autoComplete="username" autoFocus required />
                   </div>
                   <Button type="submit" disabled={ocupado || !email.trim()}>
-                    {ocupado ? 'Enviando…' : 'Enviar enlace'}
+                    {ocupado ? t('c.sending') : t('login.send_link')}
                   </Button>
                   <button type="button" className="text-sm text-muted-foreground underline"
                     onClick={() => { setModo('login'); setError(null) }}>
-                    Volver al inicio de sesión
+                    {t('login.back_login')}
                   </button>
                 </form>
               </CardContent>
@@ -170,23 +156,23 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           ) : (
             <>
               <CardHeader>
-                <CardTitle>Consola POMA</CardTitle>
-                <p className="text-sm text-muted-foreground">Acceso restringido al equipo</p>
+                <CardTitle>{t('login.title')}</CardTitle>
+                <p className="text-sm text-muted-foreground">{t('login.subtitle')}</p>
               </CardHeader>
               <CardContent>
                 <form className="grid gap-4" onSubmit={entrar}>
                   <div className="grid gap-2">
-                    <Label htmlFor="em">Email</Label>
-                    <Input id="em" type="email" placeholder="tu@correo.com" value={email}
+                    <Label htmlFor="em">{t('login.email')}</Label>
+                    <Input id="em" type="email" value={email}
                       onChange={(e) => { setEmail(e.target.value); setError(null) }}
                       autoComplete="username" autoFocus required />
                   </div>
                   <div className="grid gap-2">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="pw">Contraseña</Label>
+                      <Label htmlFor="pw">{t('login.password')}</Label>
                       <button type="button" className="text-xs text-muted-foreground underline"
                         onClick={() => { setModo('recuperar'); setError(null) }}>
-                        ¿La has olvidado?
+                        {t('login.forgot')}
                       </button>
                     </div>
                     <div className="relative">
@@ -197,7 +183,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                     </div>
                   </div>
                   <Button type="submit" disabled={ocupado || !email.trim() || !password}>
-                    {ocupado ? 'Entrando…' : 'Entrar'}
+                    {ocupado ? t('login.entering') : t('login.enter')}
                   </Button>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </form>
@@ -205,9 +191,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
             </>
           )}
         </Card>
-        <p className="mt-4 text-center text-xs text-secondary/70">
-          POMA · Espigoladors — aprofitament d'excedents
-        </p>
+        <p className="mt-4 text-center text-xs text-secondary/70">{t('login.foot')}</p>
       </div>
     </div>
   )

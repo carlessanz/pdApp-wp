@@ -1,5 +1,6 @@
 // Definiciones de los campos editables de productores y entidades, para el
-// formulario genérico de RecordDetail. El orden es el que se ve en pantalla.
+// formulario genérico de RecordDetail. `label` es una CLAVE i18n (ver lib/i18n).
+// El orden es el que se ve en pantalla.
 
 export type CampoTipo =
   | 'text'
@@ -14,7 +15,7 @@ export type CampoTipo =
 
 export interface CampoDef {
   key: string
-  label: string
+  label: string // clave i18n (f.*)
   tipo?: CampoTipo // por defecto 'text'
   opciones?: string[] // valores del desplegable cuando tipo === 'select'
   ancho?: 'full' // ocupa las dos columnas
@@ -22,56 +23,56 @@ export interface CampoDef {
 
 // productores (ver src/types.ts). id y created_at no se editan.
 export const PRODUCTOR_CAMPOS: CampoDef[] = [
-  { key: 'name', label: 'Nombre' },
-  { key: 'empresa', label: 'Empresa' },
-  { key: 'phone', label: 'Teléfono (E.164 sin +, 34…)', tipo: 'tel' },
-  { key: 'telefono_alt', label: 'Teléfono alternativo', tipo: 'tel' },
-  { key: 'email', label: 'Email', tipo: 'email' },
-  { key: 'nif', label: 'NIF' },
-  { key: 'direccion', label: 'Dirección' },
-  { key: 'codigo_postal', label: 'Código postal' },
-  { key: 'poblacion', label: 'Población' },
-  { key: 'area_geografica', label: 'Área geográfica' },
-  { key: 'tipo_empresa', label: 'Tipo de empresa' },
-  { key: 'codigo', label: 'Código' },
-  { key: 'conveni', label: 'Conveni' },
-  { key: 'visitado', label: 'Visitado' },
-  { key: 'data_alta', label: 'Data alta' },
-  { key: 'productos_habituales', label: 'Productos habituales (separa con comas)', tipo: 'list', ancho: 'full' },
-  { key: 'comentario', label: 'Comentario', tipo: 'textarea', ancho: 'full' },
-  { key: 'activo', label: 'Activo', tipo: 'bool' },
+  { key: 'name', label: 'f.name' },
+  { key: 'empresa', label: 'f.empresa' },
+  { key: 'phone', label: 'f.phone', tipo: 'tel' },
+  { key: 'telefono_alt', label: 'f.telefono_alt', tipo: 'tel' },
+  { key: 'email', label: 'f.email', tipo: 'email' },
+  { key: 'nif', label: 'f.nif' },
+  { key: 'direccion', label: 'f.direccion' },
+  { key: 'codigo_postal', label: 'f.codigo_postal' },
+  { key: 'poblacion', label: 'f.poblacion' },
+  { key: 'area_geografica', label: 'f.area_geografica' },
+  { key: 'tipo_empresa', label: 'f.tipo_empresa' },
+  { key: 'codigo', label: 'f.codigo' },
+  { key: 'conveni', label: 'f.conveni' },
+  { key: 'visitado', label: 'f.visitado' },
+  { key: 'data_alta', label: 'f.data_alta' },
+  { key: 'productos_habituales', label: 'f.productos_habituales', tipo: 'list', ancho: 'full' },
+  { key: 'comentario', label: 'f.comentario', tipo: 'textarea', ancho: 'full' },
+  { key: 'activo', label: 'f.activo', tipo: 'bool' },
 ]
 
 // entidades (ver src/types.ts). id y created_at no se editan.
 export const ENTIDAD_CAMPOS: CampoDef[] = [
-  { key: 'nombre', label: 'Nombre' },
-  { key: 'codigo', label: 'Código' },
-  { key: 'familia', label: 'Família' },
-  { key: 'prioritat', label: 'Prioritat', tipo: 'number' },
-  { key: 'estat', label: 'Estat' },
-  { key: 'gestio', label: 'Gestió' },
-  { key: 'modalitat', label: "Modalitat d'aprofitament", tipo: 'select', opciones: ['Donació', 'Transformació', 'Venda', 'Maquila', 'Altres'] },
-  { key: 'area_geografica', label: 'Área geográfica' },
-  { key: 'poblacion', label: 'Población' },
-  { key: 'direccion', label: 'Dirección' },
-  { key: 'codigo_postal', label: 'Código postal' },
-  { key: 'nif', label: 'NIF' },
-  { key: 'telefono', label: 'Teléfono', tipo: 'tel' },
-  { key: 'telefono2', label: 'Teléfono 2', tipo: 'tel' },
-  { key: 'telefono3', label: 'Teléfono 3', tipo: 'tel' },
-  { key: 'email', label: 'Email', tipo: 'email' },
-  { key: 'email2', label: 'Email 2', tipo: 'email' },
-  { key: 'contacto', label: 'Contacto' },
-  { key: 'contacto2', label: 'Contacto 2' },
-  { key: 'horario', label: 'Horario' },
-  { key: 'calendari_repartiment', label: 'Calendari repartiment' },
-  { key: 'data_alta', label: 'Data alta' },
-  { key: 'productes_frescos', label: 'Accepta frescos', tipo: 'boolnull' },
-  { key: 'productes_frescos_txt', label: 'Frescos (text original)' },
-  { key: 'transport_plataforma', label: 'Transport plataforma', tipo: 'boolnull' },
-  { key: 'transport_plataforma_txt', label: 'Transport (text original)' },
-  { key: 'descarrega_toro', label: 'Descàrrega amb toro', tipo: 'boolnull' },
-  { key: 'descarrega_toro_txt', label: 'Descàrrega (text original)' },
-  { key: 'comentarios', label: 'Comentarios', tipo: 'textarea', ancho: 'full' },
-  { key: 'opt_in', label: 'Opt-in (consentiment)', tipo: 'bool' },
+  { key: 'nombre', label: 'f.nombre' },
+  { key: 'codigo', label: 'f.codigo' },
+  { key: 'familia', label: 'f.familia' },
+  { key: 'prioritat', label: 'f.prioritat', tipo: 'number' },
+  { key: 'estat', label: 'f.estat' },
+  { key: 'gestio', label: 'f.gestio' },
+  { key: 'modalitat', label: 'f.modalitat', tipo: 'select', opciones: ['Donació', 'Transformació', 'Venda', 'Maquila', 'Altres'] },
+  { key: 'area_geografica', label: 'f.area_geografica' },
+  { key: 'poblacion', label: 'f.poblacion' },
+  { key: 'direccion', label: 'f.direccion' },
+  { key: 'codigo_postal', label: 'f.codigo_postal' },
+  { key: 'nif', label: 'f.nif' },
+  { key: 'telefono', label: 'f.phone', tipo: 'tel' },
+  { key: 'telefono2', label: 'f.telefono2', tipo: 'tel' },
+  { key: 'telefono3', label: 'f.telefono3', tipo: 'tel' },
+  { key: 'email', label: 'f.email', tipo: 'email' },
+  { key: 'email2', label: 'f.email2', tipo: 'email' },
+  { key: 'contacto', label: 'f.contacto' },
+  { key: 'contacto2', label: 'f.contacto2' },
+  { key: 'horario', label: 'f.horario' },
+  { key: 'calendari_repartiment', label: 'f.calendari_repartiment' },
+  { key: 'data_alta', label: 'f.data_alta' },
+  { key: 'productes_frescos', label: 'f.productes_frescos', tipo: 'boolnull' },
+  { key: 'productes_frescos_txt', label: 'f.productes_frescos_txt' },
+  { key: 'transport_plataforma', label: 'f.transport_plataforma', tipo: 'boolnull' },
+  { key: 'transport_plataforma_txt', label: 'f.transport_plataforma_txt' },
+  { key: 'descarrega_toro', label: 'f.descarrega_toro', tipo: 'boolnull' },
+  { key: 'descarrega_toro_txt', label: 'f.descarrega_toro_txt' },
+  { key: 'comentarios', label: 'f.comentarios', tipo: 'textarea', ancho: 'full' },
+  { key: 'opt_in', label: 'f.opt_in', tipo: 'bool' },
 ]

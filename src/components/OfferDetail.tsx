@@ -9,6 +9,7 @@ import { priorizarEntidades } from '../lib/poma'
 import type { EntidadPuntuada } from '../lib/poma'
 import { cargarNumerosTest } from '../lib/metaTest'
 import { cargarEmailsTest } from '../lib/emailTest'
+import { useT } from '../lib/i18n'
 import { textoRecollidaConfirmada, textoAlbaran } from '../lib/textos'
 import type { Canalizacion, Excedente } from '../types'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,7 @@ function ofertaHtml(texto: string): string {
 }
 
 export default function OfferDetail({ excedente, onBack }: Props) {
+  const { t } = useT()
   const [exc, setExc] = useState<Excedente>(excedente)
   const [canalizaciones, setCanalizaciones] = useState<Canalizacion[]>([])
   const [ranking, setRanking] = useState<EntidadPuntuada[]>([])
@@ -43,16 +45,15 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   const copiar = useCallback((texto: string, id: string) => {
     void navigator.clipboard.writeText(texto).then(() => {
       setCopiado(id)
-      toast.success('Copiado al portapapeles.')
+      toast.success(t('od.copied'))
       setTimeout(() => setCopiado(null), 1500)
     })
-  }, [])
+  }, [t])
 
   const recargar = useCallback(async () => {
     const [e, c] = await Promise.all([
       supabase.from('excedentes').select('*').eq('id', excedente.id).single(),
-      supabase.from('canalizaciones').select('*').eq('excedente_id', excedente.id)
-        .order('created_at', { ascending: true }),
+      supabase.from('canalizaciones').select('*').eq('excedente_id', excedente.id).order('created_at', { ascending: true }),
     ])
     if (e.data) setExc(e.data)
     setCanalizaciones(c.data ?? [])
@@ -90,34 +91,30 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     setRanking(r.ranking)
   }
 
-  // Envío por WhatsApp: texto de la oferta dentro de la ventana de 24 h.
   async function enviarOfertaWhatsApp(ent: EntidadPuntuada) {
     if (!ent.telefono || !ent.opt_in || !numerosTest.has(ent.telefono)) return
-    if (!exc.texto_oferta) { toast.error('La oferta no tiene texto generado.'); return }
+    if (!exc.texto_oferta) { toast.error(t('od.no_text')); return }
     const r = await sendWhatsApp({ to: ent.telefono, type: 'text', body: exc.texto_oferta })
-    if (r.ok) { toast.success(`Oferta enviada a ${ent.nombre} por WhatsApp.`); return }
-    const data = r.data as { error?: unknown; code?: string } | null
-    if (data?.code === 'no_test_recipient') toast.error(`${ent.nombre} no está en los números de prueba de Meta.`)
-    else if (data?.code === 'unknown_contact') toast.error(`${ent.nombre} debe escribir «hola» al número primero.`)
-    else if (data?.code === 'window_closed') toast.error(`Ventana de 24h cerrada con ${ent.nombre}.`)
-    else toast.error('No se pudo enviar por WhatsApp.')
+    if (r.ok) { toast.success(t('od.sent_wa', { name: ent.nombre })); return }
+    const data = r.data as { code?: string } | null
+    if (data?.code === 'no_test_recipient') toast.error(t('od.no_test_meta', { name: ent.nombre }))
+    else if (data?.code === 'unknown_contact') toast.error(t('od.must_write', { name: ent.nombre }))
+    else if (data?.code === 'window_closed') toast.error(t('od.window_closed', { name: ent.nombre }))
+    else toast.error(t('od.no_send_wa'))
   }
 
-  // Envío por email vía Resend.
   async function enviarOfertaEmail(ent: EntidadPuntuada) {
     const email = emailPorEntidad[ent.id]
     if (!email || !emailsTest.has(email.toLowerCase())) return
-    if (!exc.texto_oferta) { toast.error('La oferta no tiene texto generado.'); return }
+    if (!exc.texto_oferta) { toast.error(t('od.no_text')); return }
     const r = await enviarEmail({
-      to: email,
-      subject: `Oferta d'excedent disponible: ${exc.producto ?? ''}`,
-      text: exc.texto_oferta,
-      html: ofertaHtml(exc.texto_oferta),
+      to: email, subject: `Oferta d'excedent: ${exc.producto ?? ''}`,
+      text: exc.texto_oferta, html: ofertaHtml(exc.texto_oferta),
     })
-    if (r.ok) { toast.success(`Oferta enviada a ${ent.nombre} por email.`); return }
+    if (r.ok) { toast.success(t('od.sent_email', { name: ent.nombre })); return }
     const data = r.data as { code?: string } | null
-    if (data?.code === 'no_test_recipient') toast.error(`${email} no está en la lista de correos de prueba.`)
-    else toast.error('No se pudo enviar el email.')
+    if (data?.code === 'no_test_recipient') toast.error(t('od.email_no_test', { email }))
+    else toast.error(t('od.no_send_email'))
   }
 
   async function altaCanalizacion(e: FormEvent<HTMLFormElement>) {
@@ -148,15 +145,14 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   }
 
   async function marcarNoColocada() {
-    const motivo = window.prompt('Motiu pel qual no s’ha col·locat:')
+    const motivo = window.prompt(t('od.prompt_uncoll'))
     if (!motivo) return
-    await supabase.from('excedentes')
-      .update({ estado: 'no_colocada', motivo_no_colocada: motivo }).eq('id', excedente.id)
+    await supabase.from('excedentes').update({ estado: 'no_colocada', motivo_no_colocada: motivo }).eq('id', excedente.id)
     await recargar()
   }
 
   async function cancelarOferta() {
-    if (!window.confirm('¿Seguro que quieres cancelar esta oferta? Quedará marcada como cancelada.')) return
+    if (!window.confirm(t('od.confirm_cancel'))) return
     await supabase.from('excedentes').update({ estado: 'cancelada' }).eq('id', excedente.id)
     await recargar()
   }
@@ -167,7 +163,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" onClick={onBack} className="text-muted-foreground">
-        <ArrowLeft className="size-4" /> Ofertas
+        <ArrowLeft className="size-4" /> {t('od.back')}
       </Button>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -179,17 +175,17 @@ export default function OfferDetail({ excedente, onBack }: Props) {
         </div>
         <div className="text-right">
           <div className="text-lg font-bold">{canalizados}/{total} kg</div>
-          <span className="text-sm text-muted-foreground">{faltan > 0 ? `falten ${faltan}` : 'complet'}</span>
+          <span className="text-sm text-muted-foreground">{faltan > 0 ? t('off.falten', { n: faltan }) : t('off.complet')}</span>
         </div>
       </div>
 
       {exc.texto_oferta && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Texto de la oferta</CardTitle>
+            <CardTitle className="text-base">{t('od.offer_text')}</CardTitle>
             <Button variant="outline" size="sm" onClick={() => copiar(exc.texto_oferta ?? '', 'oferta')}>
               {copiado === 'oferta' ? <Check className="size-4" /> : <Copy className="size-4" />}
-              Copiar para el grupo
+              {t('od.copy_group')}
             </Button>
           </CardHeader>
           <CardContent>
@@ -199,18 +195,18 @@ export default function OfferDetail({ excedente, onBack }: Props) {
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Disponible hasta</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">{t('od.available_until')}</CardTitle></CardHeader>
         <CardContent className="flex items-center gap-3">
           <Input type="date" className="w-auto" defaultValue={exc.disponible_hasta ?? ''}
             onChange={(ev) => void guardarFecha(ev.target.value)} />
-          {vencida && <span className="text-sm text-destructive">Vencida con kg sin cubrir</span>}
+          {vencida && <span className="text-sm text-destructive">{t('od.expired')}</span>}
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Entidades priorizadas</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">{t('od.prioritized')}</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          {cargandoRanking && <p className="text-sm text-muted-foreground">Calculando…</p>}
+          {cargandoRanking && <p className="text-sm text-muted-foreground">{t('od.calculating')}</p>}
           {rankingError && <p className="text-sm text-destructive">{rankingError}</p>}
           {!cargandoRanking && !rankingError && ranking.slice(0, 15).map((ent) => {
             const enMeta = ent.telefono != null && numerosTest.has(ent.telefono)
@@ -223,20 +219,20 @@ export default function OfferDetail({ excedente, onBack }: Props) {
                   <span className="w-6 text-center text-lg font-bold text-primary">{ent.puntuacion}</span>
                   <div>
                     <div className="font-medium">{ent.nombre}{ent.poblacion ? ` · ${ent.poblacion}` : ''}</div>
-                    <div className="text-xs text-muted-foreground">{ent.motivos.join(' · ') || 'Sin coincidencias'}</div>
+                    <div className="text-xs text-muted-foreground">{ent.motivos.join(' · ') || t('od.no_match_ent')}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1 text-xs text-muted-foreground">
                     <input type="checkbox" checked={ent.opt_in} onChange={() => void toggleOptIn(ent.id, ent.opt_in)} />
-                    opt-in
+                    {t('od.optin')}
                   </label>
                   <Button size="sm" disabled={!ent.opt_in || !enMeta}
-                    title={!ent.opt_in ? 'Sin opt-in' : !enMeta ? 'No está en Meta' : undefined}
-                    onClick={() => void enviarOfertaWhatsApp(ent)}>WhatsApp</Button>
+                    title={!ent.opt_in ? t('od.no_optin') : !enMeta ? t('od.not_meta') : undefined}
+                    onClick={() => void enviarOfertaWhatsApp(ent)}>{t('od.whatsapp')}</Button>
                   <Button size="sm" variant="outline" disabled={!enEmail}
-                    title={!email ? 'Sin email' : !enEmail ? 'Email no está en la lista de test' : undefined}
-                    onClick={() => void enviarOfertaEmail(ent)}>Email</Button>
+                    title={!email ? t('od.no_email') : !enEmail ? t('od.email_not_test') : undefined}
+                    onClick={() => void enviarOfertaEmail(ent)}>{t('od.email')}</Button>
                 </div>
               </div>
             )
@@ -245,41 +241,41 @@ export default function OfferDetail({ excedente, onBack }: Props) {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Canalizaciones</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">{t('od.channelings')}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {canalizaciones.length === 0 && <p className="text-sm text-muted-foreground">Ninguna todavía.</p>}
+          {canalizaciones.length === 0 && <p className="text-sm text-muted-foreground">{t('od.none_yet')}</p>}
           {canalizaciones.map((c) => {
             const difiere = c.kg_reales != null && Number(c.kg_reales) !== Number(c.kg_confirmados)
             return (
               <div key={c.id} className="flex flex-wrap items-center gap-3 border-b pb-2 text-sm">
                 <span className="font-medium">{nombrePorId(c.entidad_id)}</span>
-                <span>{c.kg_confirmados} kg conf.</span>
+                <span>{c.kg_confirmados} kg</span>
                 <label className="flex items-center gap-1">
-                  reales:
+                  {t('od.reals')}
                   <Input type="number" defaultValue={c.kg_reales ?? ''} className={`h-8 w-20 ${difiere ? 'border-accent' : ''}`}
                     onBlur={(ev) => ev.target.value && void guardarKgReales(c.id, Number(ev.target.value))} />
                 </label>
-                {difiere && <span className="text-xs text-accent">difiere</span>}
+                {difiere && <span className="text-xs text-accent">{t('od.differs')}</span>}
                 <Button variant="outline" size="sm"
                   onClick={() => copiar(textoAlbaran({
                     idExcedente: exc.id_excedente ?? '', entitat: nombrePorId(c.entidad_id),
                     productor: '', producte: exc.producto ?? '',
                     kgReals: String(c.kg_reales ?? c.kg_confirmados ?? ''),
                     dataRecollida: c.data_hora_recollida?.slice(0, 10) ?? '',
-                  }), `alb-${c.id}`)}>Albarà</Button>
+                  }), `alb-${c.id}`)}>{t('od.albara')}</Button>
               </div>
             )
           })}
           <form className="flex flex-wrap items-center gap-2 pt-2" onSubmit={altaCanalizacion}>
             <select name="entidad" required defaultValue=""
               className="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
-              <option value="" disabled>Entidad…</option>
+              <option value="" disabled>{t('od.entity_ph')}</option>
               {ranking.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
             </select>
-            <Input name="kg" type="number" placeholder="kg" required className="w-24" />
-            <Input name="caixes" type="number" placeholder="caixes" className="w-24" />
-            <Input name="comentarios" type="text" placeholder="comentarios" className="w-40" />
-            <Button type="submit">Añadir</Button>
+            <Input name="kg" type="number" placeholder={t('od.kg_ph')} required className="w-24" />
+            <Input name="caixes" type="number" placeholder={t('od.boxes_ph')} className="w-24" />
+            <Input name="comentarios" type="text" placeholder={t('od.comments_ph')} className="w-40" />
+            <Button type="submit">{t('c.add')}</Button>
           </form>
         </CardContent>
       </Card>
@@ -287,14 +283,14 @@ export default function OfferDetail({ excedente, onBack }: Props) {
       {exc.estado === 'bloqueada' && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Recollida confirmada</CardTitle>
+            <CardTitle className="text-base">{t('od.recollida')}</CardTitle>
             <Button variant="outline" size="sm"
               onClick={() => copiar(textoRecollidaConfirmada({
                 entitat: canalizaciones.map((c) => nombrePorId(c.entidad_id)).join(', '),
                 dataHora: '', kgRecollits: String(canalizados), kgFalten: String(faltan), comentaris: '',
               }), 'recollida')}>
               {copiado === 'recollida' ? <Check className="size-4" /> : <Copy className="size-4" />}
-              Copiar RECOLLIDA CONFIRMADA
+              {t('od.copy_recollida')}
             </Button>
           </CardHeader>
         </Card>
@@ -302,8 +298,8 @@ export default function OfferDetail({ excedente, onBack }: Props) {
 
       {exc.estado !== 'no_colocada' && exc.estado !== 'cerrada' && exc.estado !== 'cancelada' && (
         <div className="flex flex-wrap gap-2">
-          <Button variant="destructive" onClick={() => void marcarNoColocada()}>Marcar como no colocada</Button>
-          <Button variant="destructive" onClick={() => void cancelarOferta()}>Cancelar oferta</Button>
+          <Button variant="destructive" onClick={() => void marcarNoColocada()}>{t('od.mark_uncoll')}</Button>
+          <Button variant="destructive" onClick={() => void cancelarOferta()}>{t('od.cancel_offer')}</Button>
         </div>
       )}
     </div>

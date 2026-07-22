@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { cargarNumerosTest } from '../lib/metaTest'
+import { useT } from '../lib/i18n'
 import type { Productor } from '../types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,11 +18,7 @@ interface Props {
   onNew: () => void
 }
 
-interface MessageRow {
-  contact_phone: string
-  direction: 'inbound' | 'outbound'
-  created_at: string
-}
+interface MessageRow { contact_phone: string; direction: 'inbound' | 'outbound'; created_at: string }
 
 function countUnanswered(rows: MessageRow[]): Record<string, number> {
   const lastOutbound: Record<string, string> = {}
@@ -34,9 +31,7 @@ function countUnanswered(rows: MessageRow[]): Record<string, number> {
   for (const row of rows) {
     if (row.direction !== 'inbound') continue
     const last = lastOutbound[row.contact_phone]
-    if (!last || row.created_at > last) {
-      counts[row.contact_phone] = (counts[row.contact_phone] ?? 0) + 1
-    }
+    if (!last || row.created_at > last) counts[row.contact_phone] = (counts[row.contact_phone] ?? 0) + 1
   }
   return counts
 }
@@ -48,6 +43,7 @@ function casa(p: Productor, q: string): boolean {
 }
 
 export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Props) {
+  const { t } = useT()
   const [producers, setProducers] = useState<Productor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -60,7 +56,7 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
     supabase.from('productores').select('*').order('name', { ascending: true })
       .then(({ data, error: loadError }) => {
         if (cancelled) return
-        if (loadError) setError(`No se pudieron cargar los productores: ${loadError.message}`)
+        if (loadError) setError(loadError.message)
         else setProducers(data ?? [])
         setLoading(false)
       })
@@ -82,10 +78,7 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
     const channel = supabase
       .channel('wa-messages-productores')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' },
-        (payload) => {
-          rows = [...rows, payload.new as MessageRow]
-          setUnanswered(countUnanswered(rows))
-        })
+        (payload) => { rows = [...rows, payload.new as MessageRow]; setUnanswered(countUnanswered(rows)) })
       .subscribe()
     return () => { cancelled = true; void supabase.removeChannel(channel) }
   }, [])
@@ -108,10 +101,10 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Teléfono</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
+              <TableHead>{t('prod.c_name')}</TableHead>
+              <TableHead>{t('prod.c_email')}</TableHead>
+              <TableHead>{t('prod.c_phone')}</TableHead>
+              <TableHead className="text-right">{t('prod.c_actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -123,27 +116,18 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
                     <span className="flex flex-wrap items-center gap-2">
                       {p.name}
                       {marcarMeta && <Badge variant="secondary">Meta</Badge>}
-                      {sinContestar > 0 && (
-                        <Badge variant="destructive">{sinContestar} sin contestar</Badge>
-                      )}
+                      {sinContestar > 0 && <Badge variant="destructive">{t('prod.unanswered', { n: sinContestar })}</Badge>}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     <div className="max-w-[180px] break-all leading-tight">{p.email ?? '—'}</div>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap tabular-nums">
-                    {p.phone ? `+${p.phone}` : '—'}
-                  </TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums">{p.phone ? `+${p.phone}` : '—'}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => onOpenDetail(p)}>
-                        Detalle
-                      </Button>
-                      <Button size="sm" disabled={!p.phone}
-                        title={p.phone ? undefined : 'Sin teléfono móvil'}
-                        onClick={() => p.phone && onSendMessage(p.phone, p.name)}>
-                        Mensaje
-                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => onOpenDetail(p)}>{t('c.detail')}</Button>
+                      <Button size="sm" disabled={!p.phone} title={p.phone ? undefined : t('prod.no_phone')}
+                        onClick={() => p.phone && onSendMessage(p.phone, p.name)}>{t('c.message')}</Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -161,36 +145,25 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <div>
-          <CardTitle>Productores</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Arriba, los dados de alta en Meta (pueden recibir WhatsApp); abajo, el resto.
-          </p>
+          <CardTitle>{t('prod.title')}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">{t('prod.subtitle')}</p>
         </div>
-        <Button onClick={onNew}><Plus className="size-4" /> Nuevo</Button>
+        <Button onClick={onNew}><Plus className="size-4" /> {t('c.new_m')}</Button>
       </CardHeader>
       <CardContent className="space-y-6">
-        <Input type="search" placeholder="Buscar por nombre, empresa, teléfono, población o email…"
-          value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
-
-        {loading && <p className="text-sm text-muted-foreground">Cargando productores…</p>}
+        <Input type="search" placeholder={t('prod.search')} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        {loading && <p className="text-sm text-muted-foreground">{t('c.loading')}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
-        {vacio && (
-          <p className="text-sm text-muted-foreground">
-            {producers.length === 0 ? 'No hay productores.' : 'Ningún productor casa con la búsqueda.'}
-          </p>
-        )}
-
+        {vacio && <p className="text-sm text-muted-foreground">{producers.length === 0 ? t('prod.empty') : t('prod.no_match')}</p>}
         {enMeta.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-sm font-semibold">Pueden recibir (en Meta) · {enMeta.length}</h3>
+            <h3 className="text-sm font-semibold">{t('prod.grp_meta', { n: enMeta.length })}</h3>
             {tabla(enMeta, true)}
           </section>
         )}
         {resto.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-sm font-semibold text-muted-foreground">
-              No dados de alta en Meta · {resto.length}
-            </h3>
+            <h3 className="text-sm font-semibold text-muted-foreground">{t('prod.grp_rest', { n: resto.length })}</h3>
             {tabla(resto, false)}
           </section>
         )}
