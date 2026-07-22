@@ -434,3 +434,10 @@ entrypoint = "./functions/whatsapp-send/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/whatsapp-send/*.html" ]
+
+# La invoca pg_cron vía pg_net (sin JWT); se protege con un secreto compartido propio.
+[functions.intake-recordatorios]
+enabled = true
+verify_jwt = false
+import_map = "./functions/intake-recordatorios/deno.json"
+entrypoint = "./functions/intake-recordatorios/index.ts"

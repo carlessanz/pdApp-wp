@@ -103,6 +103,43 @@ Deno.serve(async (req) => {
       return responder({ error: "Falta 'template' para un mensaje de plantilla" }, 400);
     }
 
+    // Gate de la lista de test de Meta. En el entorno de test la Cloud API solo
+    // entrega a los ≤5 números dados de alta en Meta; los guardamos en
+    // `meta_test_recipients`. Si la tabla tiene alguna fila, solo se envía a quien
+    // esté en ella; si está vacía, no restringe (paso a producción sin límite de
+    // 5). Defensa en profundidad: la UI ya desactiva el botón, esto lo corta en el
+    // servidor aunque la UI fallara. Es independiente del interruptor
+    // WHATSAPP_ENVIO_REAL: uno limita a QUIÉN se podría enviar, el otro si sale algo.
+    const { data: enLista, error: listaError } = await supabase
+      .from("meta_test_recipients")
+      .select("phone")
+      .eq("phone", to)
+      .maybeSingle();
+    if (listaError) {
+      console.error("meta_test_recipients select:", listaError.message);
+      return responder({ error: "Error consultando la lista de test de Meta" }, 500);
+    }
+    if (!enLista) {
+      const { count, error: countError } = await supabase
+        .from("meta_test_recipients")
+        .select("phone", { count: "exact", head: true });
+      if (countError) {
+        console.error("meta_test_recipients count:", countError.message);
+        return responder({ error: "Error consultando la lista de test de Meta" }, 500);
+      }
+      if ((count ?? 0) > 0) {
+        return responder(
+          {
+            error:
+              `${to} no está en la lista de números de prueba de Meta. En el entorno ` +
+              `de test solo se puede enviar a los números dados de alta en Meta.`,
+            code: "no_test_recipient",
+          },
+          403,
+        );
+      }
+    }
+
     const { data: contact, error: contactError } = await supabase
       .from("wa_contacts")
       .select("phone, opt_in, last_inbound_at")

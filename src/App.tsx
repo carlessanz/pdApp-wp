@@ -2,16 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import type { Excedente, Productor, WaContact } from './types'
 import AuthGate from './components/AuthGate'
+import Dashboard from './components/Dashboard'
 import ProducersList from './components/ProducersList'
+import EntitiesList from './components/EntitiesList'
 import ContactList from './components/ContactList'
 import Conversation from './components/Conversation'
 import OffersList from './components/OffersList'
 import OfferDetail from './components/OfferDetail'
 
-type View = 'ofertas' | 'productores' | 'mensajeria'
+type View = 'dashboard' | 'ofertas' | 'productores' | 'entidades' | 'mensajeria'
 
 export default function App() {
-  const [view, setView] = useState<View>('ofertas')
+  const [view, setView] = useState<View>('dashboard')
   const [selectedOffer, setSelectedOffer] = useState<Excedente | null>(null)
   const [contacts, setContacts] = useState<WaContact[]>([])
   const [loadingContacts, setLoadingContacts] = useState(true)
@@ -72,14 +74,20 @@ export default function App() {
 
   const selected = contacts.find((c) => c.phone === selectedPhone) ?? null
 
-  // La mensajería tiene su propia navegación interna (sidebar + volver a
-  // productores), así que la barra superior solo se muestra fuera de ella.
+  // La mensajería tiene su propia navegación interna (sidebar + volver), así que
+  // la barra superior solo se muestra fuera de ella.
   const nav = (
     <nav className="topnav">
+      <button type="button" className={view === 'dashboard' ? 'active' : ''}
+        onClick={() => setView('dashboard')}>Dashboard</button>
       <button type="button" className={view === 'ofertas' ? 'active' : ''}
         onClick={() => { setView('ofertas'); setSelectedOffer(null) }}>Ofertas</button>
       <button type="button" className={view === 'productores' ? 'active' : ''}
         onClick={() => setView('productores')}>Productores</button>
+      <button type="button" className={view === 'entidades' ? 'active' : ''}
+        onClick={() => setView('entidades')}>Entidades</button>
+      <button type="button" className={view === 'mensajeria' ? 'active' : ''}
+        onClick={() => setView('mensajeria')}>Mensajería</button>
     </nav>
   )
 
@@ -88,14 +96,13 @@ export default function App() {
       {view === 'mensajeria' ? (
         <div className="app">
           <ContactList
-            contacts={contacts.filter((c) => c.phone === selectedPhone)}
-            single
+            contacts={contacts}
             loading={loadingContacts}
             error={contactsError}
             selectedPhone={selectedPhone}
             onSelect={setSelectedPhone}
             onReload={loadContacts}
-            onBack={() => setView('productores')}
+            onBack={() => setView('dashboard')}
           />
           {selected ? (
             <Conversation key={selected.phone} contact={selected} />
@@ -108,15 +115,15 @@ export default function App() {
       ) : (
         <div className="shell">
           {nav}
-          {view === 'ofertas' ? (
-            selectedOffer ? (
+          {view === 'dashboard' && <Dashboard />}
+          {view === 'ofertas' &&
+            (selectedOffer ? (
               <OfferDetail excedente={selectedOffer} onBack={() => setSelectedOffer(null)} />
             ) : (
               <OffersList onOpen={setSelectedOffer} />
-            )
-          ) : (
-            <ProducersList onSendMessage={openMessagingWith} />
-          )}
+            ))}
+          {view === 'productores' && <ProducersList onSendMessage={openMessagingWith} />}
+          {view === 'entidades' && <EntitiesList />}
         </div>
       )}
     </AuthGate>

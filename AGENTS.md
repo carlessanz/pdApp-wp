@@ -56,19 +56,22 @@ index.html
 .env.local.example             Plantilla de variables del frontend (sí se versiona)
 src/
   main.tsx                     Punto de entrada React
-  App.tsx                      Estado raíz: vista, contactos, contacto seleccionado
+  App.tsx                      Estado raíz: vista (4 secciones), contactos, contacto seleccionado
   types.ts                     Tipos de todas las tablas
-  index.css                    Todos los estilos (global, ~475 líneas)
+  index.css                    Todos los estilos (global, ~825 líneas)
   lib/
     supabase.ts                Cliente Supabase (lanza si faltan las env vars)
     whatsapp.ts                sendWhatsApp(): llama a la Edge Function; nunca lanza
     poma.ts                    priorizarEntidades(): llama a la Edge Function con el JWT
+    metaTest.ts                Lista de números de prueba de Meta (whitelist de envío, §9)
     textos.ts                  RECOLLIDA CONFIRMADA y albarán (los compone el panel)
   components/
     AuthGate.tsx               Login real con Supabase Auth (ver §9)
-    OffersList.tsx             Ofertas activas con kg en vivo (Realtime)
-    OfferDetail.tsx            Detalle: priorización, canalizaciones, opt-in, cierre
-    ProducersList.tsx          Tabla de productores + badge "sin contestar"
+    Dashboard.tsx              Landing tras login: guía del proceso, KPIs y gestor de la lista Meta
+    OffersList.tsx             Ofertas activas con kg en vivo (Realtime) + buscador
+    OfferDetail.tsx            Detalle: priorización, canalizaciones, opt-in, cierre, cancelar
+    ProducersList.tsx          Tabla de productores: buscador + separación por lista Meta
+    EntitiesList.tsx           Tabla de entidades receptoras: buscador + badge "Meta"
     ContactList.tsx            Sidebar de contactos + alta manual
     Conversation.tsx           Hilo de mensajes + composer + Realtime
 scripts/
@@ -86,6 +89,7 @@ supabase/
     priorizar-entidades/       POST: ranking de entidades para un excedente (JWT)
     whatsapp-send/index.ts     POST: reglas de envío; delega en _shared
     whatsapp-webhook/index.ts  GET verificación / POST recepción; engancha el intake
+    intake-recordatorios/      POST: avisa intakes a medias (lo llama pg_cron vía pg_net)
 docs/                          Material de trabajo local — IGNORADO POR GIT (§7)
   nuevas-funcionalidades/      Specs POMA, manuales y CSV de origen
 ```
@@ -122,18 +126,37 @@ cuando el texto no es concluyente (`"1 furgo"`, `"Transpalet"`, `"In situ"`).
 
 **`excedentes`** — cabecera de la oferta. `id_excedente` UNIQUE con formato
 `E-AAMMDD-XXX-YYY-N`. `estado` ∈ `borrador` · `publicada` · `parcial` · `bloqueada` ·
-`cerrada` · `no_colocada`. `modalitat` ∈ `donacio` · `venda` · `maquila`.
+`cerrada` · `no_colocada` · **`cancelada`** (anulada desde el panel; check en
+`20260722130100_estado_cancelada.sql`). `modalitat` ∈ `donacio` · `venda` · `maquila`.
 
 **`canalizaciones`** — detalle por entidad: `kg_confirmados`, `kg_reales`, cajas, albaranes,
 firmas. Relación **`excedentes` 1—N `canalizaciones`** (una oferta, varias entidades).
 
 **`intake_sessions`** — estado del flujo conversacional: `telefono`, `paso_actual`,
-`datos_parciales jsonb`.
+`datos_parciales jsonb`, `excedente_id` (sin uso), `updated_at` y
+**`recordatorio_enviado_at`** (marca del aviso de 10 min; `guardar()` la vuelve a `null` en
+cada actividad, así el recordatorio salta 10 min tras la última interacción — §5).
 
 **Listas maestras** — `productos` (`nombre` PK, `familia`, `eur_kg`), `causas` (`codigo` PK),
 `factores_conversion` (`producto` PK, `kg_por_unidad`). Los nombres de
 `factores_conversion` **no casan** con `productos` (van en mayúsculas): es tabla de
 consulta, no clave foránea.
+
+**`meta_test_recipients`** — `phone` PK (E.164 sin `+`), `etiqueta`, `created_at`
+(`20260722120000_meta_test_recipients.sql`). Whitelist de destinatarios: en el entorno de
+test la Cloud API solo entrega a los ≤5 números dados de alta en Meta, y **Meta no expone
+ninguna API** para listarlos ni añadirlos (se gestionan en su panel confirmando un código).
+La app guarda aquí su copia y la usa como fuente de verdad para separar productores (§6ter) y
+para el gate de envío (§8). **Semántica clave**: si la tabla tiene filas, solo se envía a
+quien esté en ella; si está **vacía**, no restringe nada (así, al pasar a un número de
+producción sin el límite de 5, se vacía la lista y el gate desaparece solo). La gestiona
+`src/lib/metaTest.ts` desde el Dashboard.
+
+**`app_config`** — `key` PK, `value`, `updated_at` (`20260722130000_intake_recordatorios.sql`).
+Clave/valor para secretos que un **job** necesita y que no pueden ir en git. Hoy guarda
+`recordatorios_secret` (el que el job pasa a `intake-recordatorios`, §5). **Solo `service_role`**:
+RLS activa sin política y `revoke` explícito del `SELECT` que `authenticated` heredaría por
+default privileges (§9). La fila del secreto se inserta fuera de git con la service key.
 
 ### Integridad
 
@@ -143,10 +166,11 @@ Las tablas POMA sí tienen foreign keys. Las de mensajería **no**: `productores
 ### RLS y GRANTs — hacen falta LAS DOS capas
 
 `service_role` acceso total en todas (lo usan las Edge Functions); **`authenticated`** con
-`SELECT` y, solo en `wa_contacts`, `INSERT`/`UPDATE`. `anon` **no tiene ningún privilegio**
-desde `20260721160000_auth_authenticated.sql`. Sin `INSERT` en `wa_messages` para nadie
-salvo el servidor: el envío pasa siempre por la Edge Function. Realtime en `wa_contacts`,
-`wa_messages`, `excedentes` y `canalizaciones`.
+`SELECT` y, solo en `wa_contacts`, `INSERT`/`UPDATE` y, solo en `meta_test_recipients`,
+`INSERT`/`DELETE` (el equipo gestiona la whitelist desde el Dashboard). `anon` **no tiene
+ningún privilegio** desde `20260721160000_auth_authenticated.sql`. Sin `INSERT` en
+`wa_messages` para nadie salvo el servidor: el envío pasa siempre por la Edge Function.
+Realtime en `wa_contacts`, `wa_messages`, `excedentes` y `canalizaciones`.
 
 **Las políticas RLS por sí solas no bastan.** Supabase ya no expone automáticamente las
 tablas nuevas del esquema `public` a los roles de la Data API
@@ -184,6 +208,15 @@ se registran como `outbound`.
 `intake_sessions` (una fila por teléfono) y cada mensaje se interpreta según `paso_actual`.
 Al completarse, `crearExcedenteDesdeSesion()` da de alta el excedente y avisa al productor.
 Detalle en §6bis.
+
+**Recordatorio de intake a medias** — la base **no** puede enviar WhatsApp, así que el aviso
+de 10 min se dispara así: `pg_cron` (cada 2 min) → `disparar_recordatorios_intake()` →
+`net.http_post` (**pg_net**) → Edge Function `intake-recordatorios` → busca sesiones inactivas
+entre 10 min y 12 h sin avisar y manda `sendBotones` «Continuar / Cancel·lar», marcando
+`recordatorio_enviado_at`. La función se despliega `--no-verify-jwt` y se protege con un secreto
+compartido (cabecera `x-recordatorios-secret`) que vive en `app_config` (lo lee el job) y en el
+secreto `RECORDATORIOS_SECRET` (lo valida la función). Si el productor pulsa **Continuar** se
+reanuda el paso; **Cancel·lar** (o la palabra `CANCEL·LAR`) borra la sesión. Detalle en §6bis.
 
 **"Sin contestar"** — `countUnanswered()` en `ProducersList`: mensajes `inbound` posteriores
 al último `outbound` de ese teléfono.
@@ -242,10 +275,10 @@ Trece pasos: `familia` → `producte` → `varietat` → `kg` → `caixes` → `
 escritas a mano.
 
 **Arranca preguntando, no con el cuestionario.** Ante un mensaje que no sea ALTA/BAJA de un
-productor sin sesión abierta, POMA responde *"Hola X! Vols oferir un excedent?"* con botones.
-Es una desviación deliberada del POMA §8, que hacía que *cualquier* mensaje lanzara el
-formulario: con 271 productores escribiendo por cualquier motivo, eso secuestra
-conversaciones normales.
+productor sin sesión abierta, POMA responde con una **guía corta** (qué es, qué preguntará, y
+que puede escribir `CANCEL·LAR` cuando quiera) y los botones *Sí / Ara no*. Es una desviación
+deliberada del POMA §8, que hacía que *cualquier* mensaje lanzara el formulario: con 271
+productores escribiendo por cualquier motivo, eso secuestra conversaciones normales.
 
 **La paginación es el caso normal.** Las listas de WhatsApp admiten 10 filas: se muestran 9
 opciones y la décima es "Més…". Hace falta porque hay **12 familias** y cuatro superan los
@@ -254,8 +287,11 @@ opciones y la décima es "Més…". Hace falta porque hay **12 familias** y cuat
 **Casos que el motor ya contempla:**
 
 - Respuesta que no encaja: se repite la pregunta, máximo 2 veces, y luego se ofrece cancelar.
-- `CANCEL·LAR` / `CANCELAR` descarta la sesión en cualquier momento.
-- Sesión inactiva más de 12 h: se descarta y se empieza de cero.
+- **Cancelar en cualquier momento**: la palabra `CANCEL·LAR` / `CANCELAR` **o** el botón
+  `intake:cancelar` (del recordatorio) borran la sesión de `intake_sessions`.
+- **Recordatorio a los 10 min** de inactividad: aviso «Continuar / Cancel·lar» (§5). *Continuar*
+  (`intake:continuar`) reanuda el paso donde se dejó; se manda una sola vez por periodo inactivo.
+- Sesión inactiva más de 12 h: se descarta y se empieza de cero (el recordatorio actúa antes).
 - Productor **sin ubicaciones** (329 de 341): no se puede enviar una lista vacía, así que se
   pide el enlace de Google Maps por texto. El enlace crea una `productor_ubicaciones` que
   hereda el municipio de la ficha.
@@ -274,8 +310,26 @@ que corresponde al momento de cierre y todavía no está implementado.
 ## 6ter. Distribución, cierre y panel
 
 Una vez creado el excedente, el técnico trabaja sobre él desde el **panel** (vistas
-Ofertas / Detalle). Navegación: barra superior de 3 secciones —Ofertas | Productores |
-Mensajería— en `App.tsx`.
+Ofertas / Detalle). Navegación: barra superior de 5 secciones —**Dashboard | Ofertas |
+Productores | Entidades | Mensajería**— en `App.tsx`. El **Dashboard** (`Dashboard.tsx`) es la
+landing tras el login: guía del proceso (los 4 momentos), KPIs agregados (ofertas por estado
+—incluidas `cancelada`—, kg canalizados/pendientes, productores/entidades y cuántos pueden
+recibir por estar en la lista Meta, mensajes recibidos/sin contestar, sesiones de intake) y el
+**gestor de la lista de test de Meta**. `OffersList`, `ProducersList` y `EntitiesList` llevan
+**buscador**; `ProducersList` separa en dos grupos —primero los que están en la lista Meta
+(badge "Meta", pueden recibir), luego el resto— y `EntitiesList` marca con badge "Meta" las
+entidades que pueden recibir. Mensajería muestra la lista completa de contactos (ya no la
+conversación única).
+
+**Solo los números de la lista Meta pueden recibir.** En el detalle, "Enviar per API" se
+habilita únicamente si la entidad tiene `opt_in` **y** su teléfono está en
+`meta_test_recipients`; el servidor lo vuelve a comprobar (§8).
+
+**Cancelar / anular una oferta ya creada.** `OfferDetail` ofrece dos acciones de anulación:
+«Marcar como no colocada» (no se encontró destino, exige motivo) y «Cancelar oferta»
+(estado `cancelada`). Un intake a medias no llega aquí: al cancelar se borra la sesión sin
+crear excedente. Las ofertas `cancelada`/`cerrada`/`no_colocada` salen del listado de activas y
+se cuentan en el Dashboard.
 
 **Priorización** (`priorizar-entidades` + `_shared/priorizacion.ts`, función pura). Dado un
 excedente, ordena las entidades candidatas. Pesos: misma área +3 (mismo municipio +2 extra);
@@ -332,7 +386,8 @@ con `disponible_hasta` vencida >24 h y kg sin cubrir. No actúa hasta que el pan
 > (`enviar()` en `_shared/whatsapp.ts`). Solo si vale exactamente `"true"` sale algo; por
 > defecto —y hoy en remoto, donde el secreto no está puesto— **no se contacta con Meta**. Los
 > salientes se registran igual en `wa_messages` con `status='simulat'` (visibles en la consola).
-> Afecta a TODO: intake, confirmaciones ALTA/BAJA y envío de ofertas a entidades. Para activar
+> Afecta a TODO: intake, recordatorios de intake, confirmaciones ALTA/BAJA y envío de ofertas a
+> entidades. Para activar
 > los envíos reales: `supabase secrets set WHATSAPP_ENVIO_REAL=true` (y en local, en el
 > env-file al servir). El webhook **sigue recibiendo**; solo se corta la salida.
 
@@ -346,6 +401,13 @@ llega a simularse):
 | `template` | `opt_in = true` | `403 no_opt_in` | La iniciamos nosotros: requiere consentimiento (RGPD + Meta) |
 
 Contacto inexistente → `404 unknown_contact`. Sin sesión válida → `401 unauthorized`.
+
+**Gate de la lista de test de Meta** (antes de las reglas de contacto): si
+`meta_test_recipients` tiene alguna fila y el destinatario **no** está en ella →
+`403 no_test_recipient`. Si la tabla está **vacía**, no restringe (§4). Es defensa en
+profundidad: la UI ya desactiva el botón, pero el servidor corta aunque la UI fallara. Es
+**independiente** del interruptor `WHATSAPP_ENVIO_REAL`: el gate limita **a quién** se podría
+enviar; el interruptor, si sale **algo** (hoy, no).
 
 Consecuencia práctica: se puede responder a cualquiera que escriba espontáneamente aunque no
 tenga opt-in, pero no iniciar una conversación sin consentimiento.
@@ -442,6 +504,9 @@ local. No importa en la práctica: `npm run dev` usa `.env.local`, que apunta a 
   dentro de un origen, porque los despliegues de Vercel no tienen URL estable. Valor actual:
   `http://localhost:5173,https://pdapp-*-carlessanz-projects.vercel.app`. Si algún día se le
   pone un dominio propio a la app, hay que añadirlo aquí o el navegador bloqueará los envíos.
+- `RECORDATORIOS_SECRET` — secreto compartido que valida `intake-recordatorios`; el **mismo**
+  valor va en `app_config.recordatorios_secret` para que el job lo pueda enviar (§4, §5). Nunca
+  en git.
 - `SB_SECRET_KEY` (`sb_secret_...`)
 - `SUPABASE_URL` (la inyecta Supabase automáticamente)
 
@@ -458,6 +523,7 @@ supabase db push                                          # aplicar migraciones
 supabase functions deploy whatsapp-send        # con verify_jwt
 supabase functions deploy whatsapp-webhook --no-verify-jwt
 supabase functions deploy priorizar-entidades  # con verify_jwt
+supabase functions deploy intake-recordatorios --no-verify-jwt   # lo llama pg_cron
 supabase secrets set --env-file .secrets.env
 
 deno run -A scripts/import-ara.ts --dry-run   # analizar sin escribir
@@ -495,10 +561,13 @@ POMA en producción real quedan pasos de configuración y negocio.
    normaliza en el panel, y hasta que lo haga el job de vencidas no actúa sobre ese excedente.
 5. `ProducersList` carga **todos** los `wa_messages` sin filtro ni paginación para contar los
    no contestados, y se suscribe a Realtime sin filtro. No escala. Igual `OffersList`, que
-   recarga entero ante cualquier cambio de Realtime.
+   recarga entero ante cualquier cambio de Realtime, y el `Dashboard`, que al entrar agrega
+   toda la base (productores, entidades, excedentes, canalizaciones, mensajes) en el cliente.
+   Los buscadores de `ProducersList`/`OffersList` filtran **en cliente** sobre lo ya cargado.
 6. `Conversation` carga el hilo completo sin paginación.
-7. `ContactList` recibe una lista ya filtrada a un elemento con la prop `single`: vestigial.
-8. `index.css` es un único fichero global (~680 líneas) con clases sin namespace.
+7. `ContactList` conserva la prop `single` (modo conversación única) pero ya no se usa: desde
+   que Mensajería muestra la lista completa, ningún llamador la pasa. Se puede eliminar.
+8. `index.css` es un único fichero global (~825 líneas) con clases sin namespace.
 9. `types.ts` no modela `raw`; `MessageRow` en `ProducersList` duplica parte de `WaMessage`.
 10. Hay migraciones que **borran datos** (`truncate wa_messages`) mezcladas con DDL.
 11. Sin FK entre `productores`, `wa_contacts` y `wa_messages` (unidas por `phone`).

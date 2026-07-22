@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Excedente } from '../types'
 
@@ -17,6 +17,9 @@ function estadoLabel(estado: string): { texto: string; clase: string } {
     case 'parcial': return { texto: 'Parcial', clase: 'estado-parcial' }
     case 'bloqueada': return { texto: 'Bloquejada', clase: 'estado-bloqueada' }
     case 'borrador': return { texto: 'Esborrany', clase: 'estado-borrador' }
+    case 'cancelada': return { texto: 'Cancel·lada', clase: 'estado-cancelada' }
+    case 'no_colocada': return { texto: 'No col·locada', clase: '' }
+    case 'cerrada': return { texto: 'Tancada', clase: '' }
     default: return { texto: estado, clase: '' }
   }
 }
@@ -26,6 +29,7 @@ export default function OffersList({ onOpen }: Props) {
   const [kg, setKg] = useState<KgPorExcedente>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [busqueda, setBusqueda] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -61,6 +65,16 @@ export default function OffersList({ onOpen }: Props) {
     return () => { void supabase.removeChannel(channel) }
   }, [load])
 
+  // Filtro client-side por referencia, producto/variedad y estado.
+  const filtradas = useMemo(() => {
+    const q = busqueda.trim().toLowerCase()
+    if (!q) return offers
+    return offers.filter((o) => {
+      const campos = [o.id_excedente, o.producto, o.variedad, estadoLabel(o.estado).texto]
+      return campos.some((c) => (c ?? '').toLowerCase().includes(q))
+    })
+  }, [offers, busqueda])
+
   return (
     <main className="producers">
       <div className="producers-card">
@@ -68,12 +82,22 @@ export default function OffersList({ onOpen }: Props) {
           <h1>Ofertas activas</h1>
           <p className="hint">Excedentes en curso, con los kg canalizados en vivo</p>
         </header>
+        <input
+          type="search"
+          className="buscador"
+          placeholder="Buscar por referencia, producto o estado…"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+        />
         {loading && <p className="hint">Cargando ofertas…</p>}
         {error && <div className="notice notice-error">{error}</div>}
         {!loading && !error && offers.length === 0 && (
           <p className="hint">No hay ofertas activas. Se crean cuando un productor escribe por WhatsApp.</p>
         )}
-        {!loading && !error && offers.length > 0 && (
+        {!loading && !error && offers.length > 0 && filtradas.length === 0 && (
+          <p className="hint">Ninguna oferta casa con la búsqueda.</p>
+        )}
+        {!loading && !error && filtradas.length > 0 && (
           <div className="producers-table-wrap">
             <table className="producers-table">
               <thead>
@@ -86,7 +110,7 @@ export default function OffersList({ onOpen }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {offers.map((o) => {
+                {filtradas.map((o) => {
                   const total = Number(o.kg_total ?? 0)
                   const canalizados = kg[o.id] ?? 0
                   const faltan = Math.max(0, total - canalizados)

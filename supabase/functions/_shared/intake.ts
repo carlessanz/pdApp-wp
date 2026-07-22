@@ -107,9 +107,11 @@ async function guardar(
   sesion: Sesion,
   cambios: Partial<Sesion> & { datos_parciales?: Record<string, unknown> },
 ): Promise<void> {
+  // Cada actividad reinicia el reloj del recordatorio: se reenviará 10 min
+  // después de la última interacción, no de la creación de la sesión.
   const { error } = await supabase
     .from("intake_sessions")
-    .update({ ...cambios, updated_at: new Date().toISOString() })
+    .update({ ...cambios, updated_at: new Date().toISOString(), recordatorio_enviado_at: null })
     .eq("id", sesion.id);
   if (error) console.error("intake_sessions update:", error.message);
 }
@@ -345,9 +347,20 @@ export async function procesarIntake(
     sesion = null;
   }
 
-  if (esCancelar(texto)) {
+  // Cancelar en cualquier momento: por palabra clave o por el botón del recordatorio.
+  if (esCancelar(texto) || id === "intake:cancelar") {
     if (sesion) await supabase.from("intake_sessions").delete().eq("id", sesion.id);
-    await sendText(supabase, from, "D'acord, ho hem cancel·lat. Escriu quan vulguis.");
+    await sendText(supabase, from, "D'acord, ho hem cancel·lat. Escriu quan vulguis. 👋");
+    return true;
+  }
+
+  // Botón "Continuar" del recordatorio: se reanuda el paso donde se dejó.
+  if (id === "intake:continuar" && sesion) {
+    const datos = { ...(sesion.datos_parciales ?? {}) };
+    datos._intentos = 0;
+    await guardar(supabase, sesion, { datos_parciales: datos });
+    const pasoActual = (sesion.paso_actual ?? "familia") as Paso;
+    await preguntar(supabase, { ...sesion, datos_parciales: datos }, pasoActual);
     return true;
   }
 
@@ -377,7 +390,11 @@ export async function procesarIntake(
     }
     await sendBotones(
       supabase, from,
-      `Hola ${productor.name}! Vols oferir un excedent?`,
+      `Hola ${productor.name}! 👋 Sóc l'assistent d'excedents d'Espigoladors.\n\n` +
+        "T'ajudo a publicar un excedent en un moment: et faré unes preguntes senzilles " +
+        "(producte, quantitat, ubicació…) i crearé l'oferta automàticament. 🥬📦\n\n" +
+        "✍️ Escriu *CANCEL·LAR* quan vulguis per aturar el procés.\n\n" +
+        "Vols oferir un excedent ara?",
       [
         { id: "intake:si", titulo: "Sí" },
         { id: "intake:no", titulo: "Ara no" },

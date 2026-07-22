@@ -99,6 +99,7 @@ export type EstadoExcedente =
   | 'bloqueada'
   | 'cerrada'
   | 'no_colocada'
+  | 'cancelada'
 
 export type Modalitat = 'donacio' | 'venda' | 'maquila'
 

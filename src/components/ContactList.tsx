@@ -69,7 +69,7 @@ export default function ContactList({
     <aside className="sidebar">
       <div className="sidebar-back">
         <button type="button" className="btn-link" onClick={onBack}>
-          ← Productores
+          ← Volver
         </button>
       </div>
       <header className="sidebar-header">

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { sendWhatsApp } from '../lib/whatsapp'
 import { priorizarEntidades } from '../lib/poma'
 import type { EntidadPuntuada } from '../lib/poma'
+import { cargarNumerosTest } from '../lib/metaTest'
 import { textoRecollidaConfirmada, textoAlbaran } from '../lib/textos'
 import type { Canalizacion, Excedente } from '../types'
 
@@ -30,6 +31,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   const [ranking, setRanking] = useState<EntidadPuntuada[]>([])
   const [rankingError, setRankingError] = useState<string | null>(null)
   const [cargandoRanking, setCargandoRanking] = useState(true)
+  const [numerosTest, setNumerosTest] = useState<Set<string>>(new Set())
   const [aviso, setAviso] = useState<string | null>(null)
   const [copiado, copiar] = useCopiar()
 
@@ -58,6 +60,11 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     })
   }, [excedente.id])
 
+  // Números dados de alta en Meta: solo a ellos se les puede enviar en test.
+  useEffect(() => {
+    void cargarNumerosTest().then(setNumerosTest)
+  }, [])
+
   // Fija disponible_hasta (el intake lo deja null: el productor responde en texto libre).
   async function guardarFecha(valor: string) {
     await supabase.from('excedentes').update({ disponible_hasta: valor || null }).eq('id', excedente.id)
@@ -72,8 +79,9 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   }
 
   // "Enviar por API": en modo PoC no sale nada (queda 'simulat'); igualmente traza.
+  // Solo se envía a entidades con opt-in y cuyo teléfono esté en la lista de Meta.
   async function enviarOferta(ent: EntidadPuntuada) {
-    if (!ent.telefono || !ent.opt_in) return
+    if (!ent.telefono || !ent.opt_in || !numerosTest.has(ent.telefono)) return
     setAviso(null)
     const r = await sendWhatsApp({
       to: ent.telefono, type: 'template', template: 'oferta_excedent',
@@ -83,12 +91,17 @@ export default function OfferDetail({ excedente, onBack }: Props) {
       setAviso(`Oferta enviada a ${ent.nombre} (mode PoC: registrada com a simulada).`)
     } else {
       const data = r.data as { error?: unknown; code?: string } | null
+      // code propio del servidor: destinatario fuera de la lista de test de Meta.
+      if (data?.code === 'no_test_recipient') {
+        setAviso(`${ent.nombre} no está en los números de prueba de Meta.`)
+        return
+      }
       const err = data?.error
-      // 131030: destinatario fuera de los 5 de test.
+      // 131030: destinatario fuera de los 5 de test (error de la propia Meta).
       const meta = (typeof err === 'object' && err) as { code?: number } | null
       setAviso(
         meta?.code === 131030
-          ? `${ent.nombre} no está en los 5 números de prueba de Meta.`
+          ? `${ent.nombre} no está en los números de prueba de Meta.`
           : typeof err === 'string' ? err : 'No se pudo enviar.',
       )
     }
@@ -131,6 +144,14 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     if (!motivo) return
     await supabase.from('excedentes')
       .update({ estado: 'no_colocada', motivo_no_colocada: motivo }).eq('id', excedente.id)
+    await recargar()
+  }
+
+  // Anula una oferta ya creada (equivale a la cancelación del productor por WhatsApp,
+  // pero hecha desde el panel). El intake a medias no llega aquí: se borra la sesión.
+  async function cancelarOferta() {
+    if (!window.confirm('¿Seguro que quieres cancelar esta oferta? Quedará marcada como cancelada.')) return
+    await supabase.from('excedentes').update({ estado: 'cancelada' }).eq('id', excedente.id)
     await recargar()
   }
 
@@ -188,30 +209,39 @@ export default function OfferDetail({ excedente, onBack }: Props) {
         {rankingError && <div className="notice notice-error">{rankingError}</div>}
         {!cargandoRanking && !rankingError && (
           <div className="rank-list">
-            {ranking.slice(0, 15).map((ent) => (
-              <div key={ent.id} className={`rank-row${ent.pendiente ? ' rank-pendiente' : ''}`}>
-                <div className="rank-main">
-                  <span className="rank-score">{ent.puntuacion}</span>
-                  <div>
-                    <div className="rank-nombre">{ent.nombre}{ent.poblacion ? ` · ${ent.poblacion}` : ''}</div>
-                    <div className="rank-motivos">{ent.motivos.join(' · ') || 'Sin coincidencias'}</div>
+            {ranking.slice(0, 15).map((ent) => {
+              // Solo se puede enviar a quien esté dado de alta en Meta (entorno de test).
+              const enMeta = ent.telefono != null && numerosTest.has(ent.telefono)
+              return (
+                <div key={ent.id} className={`rank-row${ent.pendiente ? ' rank-pendiente' : ''}`}>
+                  <div className="rank-main">
+                    <span className="rank-score">{ent.puntuacion}</span>
+                    <div>
+                      <div className="rank-nombre">
+                        {ent.nombre}{ent.poblacion ? ` · ${ent.poblacion}` : ''}
+                        {enMeta && <span className="meta-badge">Meta</span>}
+                      </div>
+                      <div className="rank-motivos">{ent.motivos.join(' · ') || 'Sin coincidencias'}</div>
+                    </div>
+                  </div>
+                  <div className="rank-actions">
+                    <label className="optin-toggle">
+                      <input type="checkbox" checked={ent.opt_in}
+                        onChange={() => void toggleOptIn(ent.id, ent.opt_in)} />
+                      opt-in
+                    </label>
+                    <button type="button" className="btn btn-primary"
+                      disabled={!ent.telefono || !ent.opt_in || !enMeta}
+                      title={!ent.telefono ? 'Sin teléfono'
+                        : !ent.opt_in ? 'Sin opt-in'
+                        : !enMeta ? 'No está en los números de prueba de Meta' : undefined}
+                      onClick={() => void enviarOferta(ent)}>
+                      Enviar per API
+                    </button>
                   </div>
                 </div>
-                <div className="rank-actions">
-                  <label className="optin-toggle">
-                    <input type="checkbox" checked={ent.opt_in}
-                      onChange={() => void toggleOptIn(ent.id, ent.opt_in)} />
-                    opt-in
-                  </label>
-                  <button type="button" className="btn btn-primary"
-                    disabled={!ent.opt_in || !ent.telefono}
-                    title={!ent.opt_in ? 'Sin opt-in' : !ent.telefono ? 'Sin teléfono' : undefined}
-                    onClick={() => void enviarOferta(ent)}>
-                    Enviar per API
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </section>
@@ -274,11 +304,14 @@ export default function OfferDetail({ excedente, onBack }: Props) {
         </section>
       )}
 
-      {/* Marcar no colocada */}
-      {exc.estado !== 'no_colocada' && exc.estado !== 'cerrada' && (
-        <section className="offer-block">
+      {/* Anular la oferta: no colocada (no se encontró destino) o cancelada (se anula) */}
+      {exc.estado !== 'no_colocada' && exc.estado !== 'cerrada' && exc.estado !== 'cancelada' && (
+        <section className="offer-block offer-acciones">
           <button type="button" className="btn btn-danger" onClick={() => void marcarNoColocada()}>
             Marcar como no colocada
+          </button>
+          <button type="button" className="btn btn-danger" onClick={() => void cancelarOferta()}>
+            Cancelar oferta
           </button>
         </section>
       )}

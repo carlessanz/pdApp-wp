@@ -12,6 +12,8 @@ dist/
 # Supabase CLI
 supabase/.temp/
 supabase/.branches/
+# Lockfiles por función: se generan al desplegar/checkear; no se versionan
+supabase/functions/*/deno.lock
 
 # Documentación de trabajo local (notas, prompts, specs): nunca entra en git
 /docs/
