@@ -83,6 +83,13 @@ export default function App() {
   const cerrarProductor = () => { setProductorDetalle(null); setProductorNuevo(false) }
   const cerrarEntidad = () => { setEntidadDetalle(null); setEntidadNueva(false) }
 
+  // Los listados (ofertas, productores, entidades) ocupan el 90% del ancho de la
+  // pantalla; sus detalles, el dashboard y la mensajería quedan centrados y legibles.
+  const listaAncha =
+    (view === 'ofertas' && !selectedOffer) ||
+    (view === 'productores' && !productorNuevo && !productorDetalle) ||
+    (view === 'entidades' && !entidadNueva && !entidadDetalle)
+
   function irA(v: View) {
     setView(v)
     if (v === 'ofertas') setSelectedOffer(null)
@@ -148,7 +155,7 @@ export default function App() {
       ) : (
         <div className="min-h-screen">
           {topbar}
-          <div className="mx-auto max-w-6xl px-4 py-6">
+          <div className={cn('mx-auto py-6', listaAncha ? 'w-[90%]' : 'max-w-6xl px-4')}>
             {view === 'dashboard' && <Dashboard />}
             {view === 'ofertas' &&
               (selectedOffer ? (
