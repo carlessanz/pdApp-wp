@@ -487,3 +487,195 @@ input:focus {
   z-index: 10;
   font-size: 0.85rem;
 }
+
+/* ─── Panel POMA ─────────────────────────────────────────────── */
+
+.shell {
+  min-height: 100vh;
+}
+
+.topnav {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.topnav button {
+  border: none;
+  background: none;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #475569;
+}
+
+.topnav button.active {
+  background: #14532d;
+  color: #fff;
+}
+
+/* Barra de progreso de kg */
+.kg-bar {
+  width: 140px;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.kg-bar-fill {
+  height: 100%;
+  background: #16a34a;
+}
+
+.kg-text {
+  display: block;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+
+.estado-badge {
+  font-size: 0.78rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.estado-bloqueada { background: #dcfce7; color: #166534; }
+.estado-parcial { background: #fef9c3; color: #854d0e; }
+.estado-publicada { background: #dbeafe; color: #1e40af; }
+
+/* Detalle de la oferta */
+.offer-detail {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.offer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.offer-kg {
+  text-align: right;
+}
+
+.offer-kg strong { display: block; font-size: 1.2rem; }
+
+.offer-block {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.offer-block h2 {
+  font-size: 1rem;
+  margin: 0 0 0.6rem;
+}
+
+.offer-block-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.offer-block-head h2 { margin: 0; }
+
+.offer-text {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.9rem;
+  background: #f8fafc;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin: 0;
+}
+
+/* Ranking de entidades */
+.rank-list { display: flex; flex-direction: column; gap: 0.4rem; }
+
+.rank-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.rank-pendiente { opacity: 0.7; background: #fffbeb; }
+
+.rank-main { display: flex; gap: 0.75rem; align-items: center; }
+
+.rank-score {
+  font-weight: 700;
+  font-size: 1.1rem;
+  min-width: 1.5rem;
+  text-align: center;
+  color: #14532d;
+}
+
+.rank-nombre { font-weight: 600; }
+.rank-motivos { font-size: 0.8rem; color: #64748b; }
+
+.rank-actions { display: flex; gap: 0.6rem; align-items: center; }
+
+.optin-toggle {
+  font-size: 0.8rem;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Canalizaciones */
+.canal-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.canal-reales input {
+  width: 5rem;
+  margin-left: 0.3rem;
+}
+
+.canal-reales input.difiere { border-color: #d97706; background: #fffbeb; }
+
+.canal-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.canal-form select, .canal-form input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: #fff;
+}
+
+.btn-danger:not(:disabled):hover { background: #b91c1c; }

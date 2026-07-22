@@ -22,9 +22,10 @@ Dos fases:
 | Fase | Qué es | Estado |
 | --- | --- | --- |
 | **1. Infraestructura WhatsApp** | Consola de mensajería: webhook con firma, envío texto/plantilla, opt-in, Realtime | ✅ construida y endurecida |
-| **2. POMA** | Intake conversacional, excedentes/canalizaciones, priorización, cierre | 🔧 datos e **intake conversacional** hechos; faltan priorización, panel y envío a entidades |
+| **2. POMA** | Intake conversacional, excedentes/canalizaciones, priorización, cierre | ✅ construida (prompts 0bis–8). Quedan checkpoints de negocio, no de código (§12) |
 
-Actualmente en **entorno de pruebas** de Meta (número de test, máximo 5 destinatarios).
+Actualmente en **entorno de pruebas** de Meta y en **modo prueba de concepto**: no se envía
+ninguna notificación real por WhatsApp (interruptor `WHATSAPP_ENVIO_REAL`, §8).
 
 **Mensajería siempre individual**, nunca a grupos: la Cloud API no escribe en grupos. Para
 publicar en un grupo se ofrece "copiar texto" y se pega a mano.
@@ -61,8 +62,12 @@ src/
   lib/
     supabase.ts                Cliente Supabase (lanza si faltan las env vars)
     whatsapp.ts                sendWhatsApp(): llama a la Edge Function; nunca lanza
+    poma.ts                    priorizarEntidades(): llama a la Edge Function con el JWT
+    textos.ts                  RECOLLIDA CONFIRMADA y albarán (los compone el panel)
   components/
     AuthGate.tsx               Login real con Supabase Auth (ver §9)
+    OffersList.tsx             Ofertas activas con kg en vivo (Realtime)
+    OfferDetail.tsx            Detalle: priorización, canalizaciones, opt-in, cierre
     ProducersList.tsx          Tabla de productores + badge "sin contestar"
     ContactList.tsx            Sidebar de contactos + alta manual
     Conversation.tsx           Hilo de mensajes + composer + Realtime
@@ -74,9 +79,11 @@ supabase/
   config.toml                  Config del CLI (puertos 553xx, ver §7)
   migrations/*.sql             Migraciones versionadas
   functions/
-    _shared/whatsapp.ts        Llamadas a la Graph API: texto, plantilla, botones, listas
+    _shared/whatsapp.ts        Graph API + interruptor de envío (texto/plantilla/interactivos)
     _shared/intake.ts          Motor conversacional (máquina de estados)
     _shared/oferta.ts          id_excedente + texto "OFERTA DISPONIBLE"
+    _shared/priorizacion.ts    Puntuación de entidades (pura, sin red)
+    priorizar-entidades/       POST: ranking de entidades para un excedente (JWT)
     whatsapp-send/index.ts     POST: reglas de envío; delega en _shared
     whatsapp-webhook/index.ts  GET verificación / POST recepción; engancha el intake
 docs/                          Material de trabajo local — IGNORADO POR GIT (§7)
@@ -264,6 +271,32 @@ MODALITAT, CAUSA, ENVASOS, RESPONSABLE, OBSERVACIONS). Queda pendiente el de "RE
 CONFIRMADA" (🚚 con SDA/ENTITAT, DATA i HORA, KG RECOLLITS, KG FALTEN RECOLLIR, Comentaris),
 que corresponde al momento de cierre y todavía no está implementado.
 
+## 6ter. Distribución, cierre y panel
+
+Una vez creado el excedente, el técnico trabaja sobre él desde el **panel** (vistas
+Ofertas / Detalle). Navegación: barra superior de 3 secciones —Ofertas | Productores |
+Mensajería— en `App.tsx`.
+
+**Priorización** (`priorizar-entidades` + `_shared/priorizacion.ts`, función pura). Dado un
+excedente, ordena las entidades candidatas. Pesos: misma área +3 (mismo municipio +2 extra);
+`transport_plataforma` +1 y `descarrega_toro` +1 (peso doble si `kg_total > 500`); producto
+fresco + entidad que acepta frescos +2; `prioritat` suma `max(0, 3 - prioritat)`. Sobre el
+`estat` (6 valores reales, no 2): `Signat` puntúa arriba; las tres variantes `Pendent*` van al
+final con aviso; `No procedeix` y sin estado se **excluyen**. Sin `opt_in` no se excluye, se
+marca (no se le puede enviar por API).
+
+**Opt-in de entidades**: las 111 tienen `opt_in=false`. Se marca a mano con un toggle en el
+detalle (mecánica de PoC). En producción se combinará con el ALTA por WhatsApp.
+
+**Canalizaciones**: el panel registra kg por entidad; al cubrir `kg_total` el excedente pasa a
+`bloqueada` y se ofrece copiar "RECOLLIDA CONFIRMADA". El cierre registra `kg_reales` (marca si
+difieren) y genera el albarán (plantilla con placeholders, `src/lib/textos.ts`).
+
+**No colocadas**: manual desde el panel (motivo obligatorio) o automático por el **job de
+vencidas** (`pg_cron`, `marcar_excedentes_vencidos()`), que marca `no_colocada` los excedentes
+con `disponible_hasta` vencida >24 h y kg sin cubrir. No actúa hasta que el panel normaliza
+`disponible_hasta` (el intake lo deja `null`).
+
 ## 7. Convenciones
 
 - **Teléfonos**: E.164 **sin** `+`, solo dígitos → `34612345678`. Validación en el frontend:
@@ -294,7 +327,18 @@ que corresponde al momento de cierre y todavía no está implementado.
 
 ## 8. Reglas de negocio
 
-**Reglas de envío** (decisión D1 del manual; implementadas en `whatsapp-send`):
+> ⚠️ **Modo prueba de concepto: no se envía nada por WhatsApp.** El interruptor
+> **`WHATSAPP_ENVIO_REAL`** (env var) gobierna el único punto que llama a la Graph API
+> (`enviar()` en `_shared/whatsapp.ts`). Solo si vale exactamente `"true"` sale algo; por
+> defecto —y hoy en remoto, donde el secreto no está puesto— **no se contacta con Meta**. Los
+> salientes se registran igual en `wa_messages` con `status='simulat'` (visibles en la consola).
+> Afecta a TODO: intake, confirmaciones ALTA/BAJA y envío de ofertas a entidades. Para activar
+> los envíos reales: `supabase secrets set WHATSAPP_ENVIO_REAL=true` (y en local, en el
+> env-file al servir). El webhook **sigue recibiendo**; solo se corta la salida.
+
+**Reglas de envío** (decisión D1 del manual; implementadas en `whatsapp-send`; se evalúan
+antes del interruptor de arriba, así que en modo PoC un envío bloqueado por regla ni siquiera
+llega a simularse):
 
 | Tipo | Condición | Si no se cumple | Por qué |
 | --- | --- | --- | --- |
@@ -393,6 +437,7 @@ local. No importa en la práctica: `npm run dev` usa `.env.local`, que apunta a 
 - `WHATSAPP_VERIFY_TOKEN`
 - `WHATSAPP_APP_SECRET`
 - `WHATSAPP_API_VERSION` (default `v23.0`)
+- `WHATSAPP_ENVIO_REAL` — solo `"true"` activa los envíos reales; ausente = modo PoC (§8)
 - `ALLOWED_ORIGIN` — admite **varios orígenes separados por comas** y `*` como comodín
   dentro de un origen, porque los despliegues de Vercel no tienen URL estable. Valor actual:
   `http://localhost:5173,https://pdapp-*-carlessanz-projects.vercel.app`. Si algún día se le
@@ -410,8 +455,9 @@ npm run build              # tsc && vite build  ← única verificación automá
 npm run preview            # servir el build
 
 supabase db push                                          # aplicar migraciones
-supabase functions deploy whatsapp-send    --no-verify-jwt
+supabase functions deploy whatsapp-send        # con verify_jwt
 supabase functions deploy whatsapp-webhook --no-verify-jwt
+supabase functions deploy priorizar-entidades  # con verify_jwt
 supabase secrets set --env-file .secrets.env
 
 deno run -A scripts/import-ara.ts --dry-run   # analizar sin escribir
@@ -421,36 +467,42 @@ deno run -A scripts/import-ara.ts             # importar los CSV maestros
 `npm run build` corre `tsc` con `strict`, `noUnusedLocals` y `noUnusedParameters`:
 **es la comprobación que debes ejecutar tras cada cambio**, porque no hay nada más.
 
-## 12. Deuda técnica conocida
+## 12. Checkpoints de negocio y deuda técnica
+
+**Checkpoints que NO son código** (POMA §10): la construcción está completa, pero para poner
+POMA en producción real quedan pasos de configuración y negocio.
+
+1. **Salir del modo PoC**: poner `WHATSAPP_ENVIO_REAL=true` cuando de verdad se quiera enviar.
+2. **Plantillas propias en Meta**: `oferta_excedent` y `confirmacio_productor` hay que darlas
+   de alta y esperar su aprobación. En test solo `hello_world` está aprobada, así que el envío
+   real de la oferta no funciona hasta entonces.
+3. **Opt-in real de las entidades**: hoy `false` en las 111; el toggle deja la mecánica, pero
+   recoger el consentimiento es trabajo de negocio.
+4. **Formato definitivo del albarán**: se genera con placeholders (`src/lib/textos.ts`); el
+   formato legal del Excel se confirma al integrarlo.
+5. **Reexportar `prod_actius.csv`** con la columna Producte para rellenar `productos_habituales`
+   (hoy vacío: el intake ofrece el catálogo completo por familias).
+6. **Paso a producción de Meta**: número real, verificación de empresa, método de pago.
+
+**Deuda técnica:**
 
 1. **Sin tests, sin linter, sin CI.** La única red de seguridad es `tsc`.
-2. No hay roles: cualquier usuario autenticado lo ve y lo puede todo.
-3. El intake avanza de paso aunque falle el envío a Meta: si la red falla, el productor no
-   recibe la pregunta pero la sesión ya ha avanzado y su siguiente mensaje se interpretará
-   como respuesta al paso nuevo.
-4. `disponible_hasta` se guarda como `null`: el productor responde en texto libre
-   ("23/07", "la setmana que ve") y todavía no se normaliza a fecha.
-5. El `responsable` del excedente queda vacío: se asigna desde el panel, que no existe aún.
-3. `ProducersList` carga **todos** los `wa_messages` sin filtro ni paginación para contar los
-   no contestados, y se suscribe a Realtime sin filtro. No escala.
-4. `Conversation` carga el hilo completo sin paginación.
-5. `ContactList` recibe una lista ya filtrada a un elemento con la prop `single`: la sidebar
-   es vestigial desde que el flujo entra por productores. Candidata a desaparecer.
-6. `openMessagingWith()` hace upsert + update siempre (dos round-trips) aunque nada cambie.
-7. Plantilla `hello_world` / `en_US` fija en el código; faltan las plantillas propias
-   (`oferta_excedent`, `confirmacio_productor`) y su alta en Meta.
-8. `index.css` es un único fichero global de ~475 líneas con clases sin namespace.
-9. `MessageRow` en `ProducersList` duplica parte de `WaMessage`; `types.ts` no modela `raw`.
+2. **No hay roles**: cualquier usuario autenticado lo ve y lo puede todo. Con 452 fichas
+   reales, dar de alta una cuenta = dar acceso a todo.
+3. El intake avanza de paso aunque falle el envío: si la red falla, el productor no recibe la
+   pregunta pero la sesión ya avanzó, y su siguiente mensaje se lee como respuesta al paso nuevo.
+4. `disponible_hasta` se guarda `null` (el productor responde en texto libre); el técnico lo
+   normaliza en el panel, y hasta que lo haga el job de vencidas no actúa sobre ese excedente.
+5. `ProducersList` carga **todos** los `wa_messages` sin filtro ni paginación para contar los
+   no contestados, y se suscribe a Realtime sin filtro. No escala. Igual `OffersList`, que
+   recarga entero ante cualquier cambio de Realtime.
+6. `Conversation` carga el hilo completo sin paginación.
+7. `ContactList` recibe una lista ya filtrada a un elemento con la prop `single`: vestigial.
+8. `index.css` es un único fichero global (~680 líneas) con clases sin namespace.
+9. `types.ts` no modela `raw`; `MessageRow` en `ProducersList` duplica parte de `WaMessage`.
 10. Hay migraciones que **borran datos** (`truncate wa_messages`) mezcladas con DDL.
 11. Sin FK entre `productores`, `wa_contacts` y `wa_messages` (unidas por `phone`).
-12. `productos_habituales` vacío hasta que se reexporte `prod_actius.csv` con la columna
-    Producte; mientras tanto el intake tendrá que ofrecer el catálogo completo por familias.
-13. Datos que condicionan la futura priorización de entidades: `estat` tiene **6 valores**
-    (`Signat` 62, `Pendent` 36, `No procedeix` 7, vacío 4, `Pendent entitat` 1,
-    `Pendent Espigoladors` 1) y la spec solo contempla dos; y `prioritat` casi no discrimina
-    (97 de 111 entidades son prioridad 1).
-14. `scripts/import-ara.ts` está verificado end-to-end contra la base local (dos pasadas:
-    la segunda actualiza, no duplica). **No se ha ejecutado nunca contra la base remota.**
+12. `prioritat` casi no discrimina (97 de 111 entidades son prioridad 1): aporta poco al ranking.
 
 ## 13. Al terminar cualquier cambio
 

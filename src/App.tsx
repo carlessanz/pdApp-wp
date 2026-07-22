@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
-import type { Productor, WaContact } from './types'
+import type { Excedente, Productor, WaContact } from './types'
 import AuthGate from './components/AuthGate'
 import ProducersList from './components/ProducersList'
 import ContactList from './components/ContactList'
 import Conversation from './components/Conversation'
+import OffersList from './components/OffersList'
+import OfferDetail from './components/OfferDetail'
 
-type View = 'productores' | 'mensajeria'
+type View = 'ofertas' | 'productores' | 'mensajeria'
 
 export default function App() {
-  const [view, setView] = useState<View>('productores')
+  const [view, setView] = useState<View>('ofertas')
+  const [selectedOffer, setSelectedOffer] = useState<Excedente | null>(null)
   const [contacts, setContacts] = useState<WaContact[]>([])
   const [loadingContacts, setLoadingContacts] = useState(true)
   const [contactsError, setContactsError] = useState<string | null>(null)
@@ -69,11 +72,20 @@ export default function App() {
 
   const selected = contacts.find((c) => c.phone === selectedPhone) ?? null
 
+  // La mensajería tiene su propia navegación interna (sidebar + volver a
+  // productores), así que la barra superior solo se muestra fuera de ella.
+  const nav = (
+    <nav className="topnav">
+      <button type="button" className={view === 'ofertas' ? 'active' : ''}
+        onClick={() => { setView('ofertas'); setSelectedOffer(null) }}>Ofertas</button>
+      <button type="button" className={view === 'productores' ? 'active' : ''}
+        onClick={() => setView('productores')}>Productores</button>
+    </nav>
+  )
+
   return (
     <AuthGate>
-      {view === 'productores' ? (
-        <ProducersList onSendMessage={openMessagingWith} />
-      ) : (
+      {view === 'mensajeria' ? (
         <div className="app">
           <ContactList
             contacts={contacts.filter((c) => c.phone === selectedPhone)}
@@ -91,6 +103,19 @@ export default function App() {
             <main className="chat chat-empty">
               <p>Selecciona un contacto para ver su conversación</p>
             </main>
+          )}
+        </div>
+      ) : (
+        <div className="shell">
+          {nav}
+          {view === 'ofertas' ? (
+            selectedOffer ? (
+              <OfferDetail excedente={selectedOffer} onBack={() => setSelectedOffer(null)} />
+            ) : (
+              <OffersList onOpen={setSelectedOffer} />
+            )
+          ) : (
+            <ProducersList onSendMessage={openMessagingWith} />
           )}
         </div>
       )}

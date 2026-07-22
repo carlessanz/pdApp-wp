@@ -7,6 +7,13 @@
 
 const API_VERSION = Deno.env.get("WHATSAPP_API_VERSION") ?? "v23.0";
 
+// Modo prueba de concepto: mientras esto no sea exactamente "true", NO se envía
+// nada por WhatsApp. Es seguro por omisión: si el secreto no está configurado,
+// no sale ningún mensaje. Los salientes se registran igualmente en wa_messages
+// con status='simulat' para verlos en la consola. Se activa el envío real
+// poniendo WHATSAPP_ENVIO_REAL=true en los secretos, sin tocar código.
+const ENVIO_REAL = Deno.env.get("WHATSAPP_ENVIO_REAL") === "true";
+
 // WhatsApp acepta como máximo 3 botones y 10 filas por lista interactiva.
 export const MAX_BOTONES = 3;
 export const MAX_FILAS_LISTA = 10;
@@ -28,9 +35,25 @@ export interface RespuestaMeta {
   status: number;
   waMessageId: string | null;
   data: unknown;
+  /** true si no se contactó con Meta (modo prueba de concepto). */
+  simulado?: boolean;
 }
 
 async function enviar(payload: Record<string, unknown>): Promise<RespuestaMeta> {
+  if (!ENVIO_REAL) {
+    // Modo PoC: no se contacta con Meta. Se devuelve una respuesta simulada para
+    // que el flujo (intake, panel) continúe con normalidad.
+    // deno-lint-ignore no-explicit-any
+    const to = (payload as any)?.to ?? "?";
+    console.log(`[SIMULADO] no se envía a ${to} (WHATSAPP_ENVIO_REAL != true)`);
+    return {
+      ok: true,
+      status: 200,
+      waMessageId: `sim-${crypto.randomUUID()}`,
+      data: { simulado: true },
+      simulado: true,
+    };
+  }
   const phoneId = Deno.env.get("WHATSAPP_PHONE_ID");
   const res = await fetch(
     `https://graph.facebook.com/${API_VERSION}/${phoneId}/messages`,
@@ -67,6 +90,9 @@ export async function registrarSaliente(
   waMessageId: string | null,
   raw?: unknown,
 ): Promise<void> {
+  // Los mensajes simulados llevan un id "sim-…" (los reales, el wamid de Meta):
+  // se distinguen en la consola con status 'simulat'.
+  const simulado = waMessageId?.startsWith("sim-") ?? false;
   const { error } = await supabase.from("wa_messages").upsert(
     {
       wa_message_id: waMessageId,
@@ -74,7 +100,7 @@ export async function registrarSaliente(
       direction: "outbound",
       type: tipo,
       body,
-      status: "sent",
+      status: simulado ? "simulat" : "sent",
       ...(raw === undefined ? {} : { raw }),
     },
     { onConflict: "wa_message_id", ignoreDuplicates: true },
