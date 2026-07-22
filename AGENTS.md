@@ -488,10 +488,10 @@ apagado y en test). Detalle:
   mismo) y el enlace se manda por **Resend** desde `recuperar-password`. La app detecta el evento
   `PASSWORD_RECOVERY` y muestra el form de nueva contraseña (`AuthGate`). La `redirectTo` (APP_URL)
   debe estar en la allow-list de Auth (Management API, **no** config push; §10).
-- **Resend sin dominio verificado solo entrega al correo propietario de la cuenta**
-  (hoy `tecnologia@espigoladors.com`); a cualquier otro devuelve `validation_error`. Para enviar a
-  las entidades/usuarios hay que **verificar un dominio en Resend** y poner `RESEND_FROM` con una
-  dirección de ese dominio. Además, el gate `email_test_recipients` limita a los correos de test.
+- **Dominio `espigoladors.com` verificado en Resend** y `RESEND_FROM="POMA <no-reply@espigoladors.com>"`
+  configurado, así que **se envía a cualquier dirección** (verificado el envío a un correo externo).
+  Si se cambia de dominio, verificarlo en `resend.com/domains` y ajustar `RESEND_FROM`. El gate
+  `email_test_recipients` limita, mientras se está en pruebas, a los correos de esa whitelist.
 
 ### Lo que sigue pendiente
 
@@ -553,8 +553,9 @@ local. No importa en la práctica: `npm run dev` usa `.env.local`, que apunta a 
   valor va en `app_config.recordatorios_secret` para que el job lo pueda enviar (§4, §5). Nunca
   en git.
 - `RESEND_API_KEY` — API key de Resend (ofertas por email y reset de contraseña). Nunca en git.
-- `RESEND_FROM` — remitente (`from`) de un dominio **verificado** en Resend; ausente = usa
-  `onboarding@resend.dev`, que **solo entrega al correo owner** de la cuenta Resend.
+- `RESEND_FROM` — remitente (`from`) de un dominio **verificado** en Resend. Valor actual:
+  `POMA <no-reply@espigoladors.com>`. Ausente = usa `onboarding@resend.dev`, que solo entrega al
+  correo owner de la cuenta.
 - `APP_URL` — URL de la app para el `redirectTo` del reset (hoy el branch-alias de Vercel
   `https://pdapp-wp-git-main-carlessanz-projects.vercel.app`); debe estar en la allow-list de Auth.
 - `SB_SECRET_KEY` (`sb_secret_...`)
