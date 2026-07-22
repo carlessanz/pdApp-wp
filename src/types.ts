@@ -65,6 +65,8 @@ export interface Entidad {
   prioritat: number | null
   estat: string | null
   gestio: string | null
+  /** Modalitat d'aprofitament: Donació · Transformació · Venda · Maquila · Altres */
+  modalitat: string | null
   comentarios: string | null
   area_geografica: string | null
   poblacion: string | null

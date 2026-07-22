@@ -136,7 +136,9 @@ aun así conservamos su ficha. La UI deshabilita el envío para ellos.
 **`entidades`** — entidades sociales receptoras (25 columnas del Excel SDA). Los tres campos
 de capacidad (`productes_frescos`, `transport_plataforma`, `descarrega_toro`) vienen como
 texto libre: se guarda el original en `*_txt` y se deriva el boolean, que queda `null`
-cuando el texto no es concluyente (`"1 furgo"`, `"Transpalet"`, `"In situ"`).
+cuando el texto no es concluyente (`"1 furgo"`, `"Transpalet"`, `"In situ"`). Ampliada con
+**`modalitat`** (`20260722160000_entidad_modalitat.sql`): modalitat d'aprofitament
+(Donació/Transformació/Venda/Maquila/Altres), editable con desplegable en el detalle (CRUD).
 
 **`excedentes`** — cabecera de la oferta. `id_excedente` UNIQUE con formato
 `E-AAMMDD-XXX-YYY-N`. `estado` ∈ `borrador` · `publicada` · `parcial` · `bloqueada` ·
@@ -239,7 +241,7 @@ entre 10 min y 12 h sin avisar y manda `sendBotones` «Continuar / Cancel·lar»
 `recordatorio_enviado_at`. La función se despliega `--no-verify-jwt` y se protege con un secreto
 compartido (cabecera `x-recordatorios-secret`) que vive en `app_config` (lo lee el job) y en el
 secreto `RECORDATORIOS_SECRET` (lo valida la función). Si el productor pulsa **Continuar** se
-reanuda el paso; **Cancel·lar** (o la palabra `CANCEL·LAR`) borra la sesión. Detalle en §6bis.
+reanuda el paso; **Cancel·lar** (o la palabra **`Stop`**) borra la sesión. Detalle en §6bis.
 
 **"Sin contestar"** — `countUnanswered()` en `ProducersList`: mensajes `inbound` posteriores
 al último `outbound` de ese teléfono.
@@ -299,7 +301,7 @@ escritas a mano.
 
 **Arranca preguntando, no con el cuestionario.** Ante un mensaje que no sea ALTA/BAJA de un
 productor sin sesión abierta, POMA responde con una **guía corta** (qué es, qué preguntará, y
-que puede escribir `CANCEL·LAR` cuando quiera) y los botones *Sí / Ara no*. Es una desviación
+que puede escribir `Stop` cuando quiera) y los botones *Sí / Ara no*. Es una desviación
 deliberada del POMA §8, que hacía que *cualquier* mensaje lanzara el formulario: con 271
 productores escribiendo por cualquier motivo, eso secuestra conversaciones normales.
 
@@ -310,7 +312,7 @@ opciones y la décima es "Més…". Hace falta porque hay **12 familias** y cuat
 **Casos que el motor ya contempla:**
 
 - Respuesta que no encaja: se repite la pregunta, máximo 2 veces, y luego se ofrece cancelar.
-- **Cancelar en cualquier momento**: la palabra `CANCEL·LAR` / `CANCELAR` **o** el botón
+- **Cancelar en cualquier momento**: la palabra **`Stop`** (alias ocultos `CANCELAR`/`CANCEL·LAR`) **o** el botón
   `intake:cancelar` (del recordatorio) borran la sesión de `intake_sessions`.
 - **Recordatorio a los 10 min** de inactividad: aviso «Continuar / Cancel·lar» (§5). *Continuar*
   (`intake:continuar`) reanuda el paso donde se dejó; se manda una sola vez por periodo inactivo.

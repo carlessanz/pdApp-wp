@@ -10,11 +10,13 @@ export type CampoTipo =
   | 'bool' // boolean no nulo (Sí/No)
   | 'boolnull' // boolean que admite «sin definir» (—/Sí/No)
   | 'list' // text[] separado por comas
+  | 'select' // desplegable con opciones fijas (usa `opciones`)
 
 export interface CampoDef {
   key: string
   label: string
   tipo?: CampoTipo // por defecto 'text'
+  opciones?: string[] // valores del desplegable cuando tipo === 'select'
   ancho?: 'full' // ocupa las dos columnas
 }
 
@@ -48,6 +50,7 @@ export const ENTIDAD_CAMPOS: CampoDef[] = [
   { key: 'prioritat', label: 'Prioritat', tipo: 'number' },
   { key: 'estat', label: 'Estat' },
   { key: 'gestio', label: 'Gestió' },
+  { key: 'modalitat', label: "Modalitat d'aprofitament", tipo: 'select', opciones: ['Donació', 'Transformació', 'Venda', 'Maquila', 'Altres'] },
   { key: 'area_geografica', label: 'Área geográfica' },
   { key: 'poblacion', label: 'Población' },
   { key: 'direccion', label: 'Dirección' },

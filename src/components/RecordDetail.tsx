@@ -142,6 +142,19 @@ export default function RecordDetail({
       const texto = Array.isArray(v) ? (v as string[]).join(', ') : ((v as string) ?? '')
       return <Input type="text" value={texto} onChange={(e) => set(c.key, e.target.value)} />
     }
+    if (tipo === 'select') {
+      const val = (v as string) ?? ''
+      return (
+        <Select value={val === '' ? '__none' : val}
+          onValueChange={(nv) => set(c.key, nv === '__none' ? null : nv)}>
+          <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none">—</SelectItem>
+            {(c.opciones ?? []).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )
+    }
     return <Input type={tipo === 'email' ? 'email' : 'text'} value={(v as string) ?? ''}
       onChange={(e) => set(c.key, e.target.value)} />
   }

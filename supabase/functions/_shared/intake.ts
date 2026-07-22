@@ -80,7 +80,8 @@ export function leerRespuesta(
 
 export function esCancelar(texto: string | null): boolean {
   const t = (texto ?? "").trim().toUpperCase().replace("·", "");
-  return t === "CANCELLAR" || t === "CANCELAR";
+  // "STOP" es la palabra oficial; CANCELAR/CANCEL·LAR se mantienen como alias.
+  return t === "STOP" || t === "CANCELLAR" || t === "CANCELAR";
 }
 
 function siguientePaso(paso: Paso): Paso | null {
@@ -393,7 +394,7 @@ export async function procesarIntake(
       `Hola ${productor.name}! 👋 Sóc l'assistent d'excedents d'Espigoladors.\n\n` +
         "T'ajudo a publicar un excedent en un moment: et faré unes preguntes senzilles " +
         "(producte, quantitat, ubicació…) i crearé l'oferta automàticament. 🥬📦\n\n" +
-        "✍️ Escriu *CANCEL·LAR* quan vulguis per aturar el procés.\n\n" +
+        "✍️ Escriu *Stop* quan vulguis per aturar el procés.\n\n" +
         "Vols oferir un excedent ara?",
       [
         { id: "intake:si", titulo: "Sí" },
@@ -424,7 +425,7 @@ export async function procesarIntake(
     if (intentos > MAX_INTENTOS) {
       await sendText(
         supabase, from,
-        "No acabo d'entendre la resposta. Escriu CANCEL·LAR per començar de nou.",
+        "No acabo d'entendre la resposta. Escriu *Stop* per aturar.",
       );
     } else {
       await preguntar(supabase, { ...sesion, datos_parciales: datos }, paso);
