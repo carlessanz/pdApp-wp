@@ -64,14 +64,16 @@ src/
     whatsapp.ts                sendWhatsApp(): llama a la Edge Function; nunca lanza
     poma.ts                    priorizarEntidades(): llama a la Edge Function con el JWT
     metaTest.ts                Lista de números de prueba de Meta (whitelist de envío, §9)
+    crudCampos.ts              Definiciones de campos para el CRUD (productores/entidades)
     textos.ts                  RECOLLIDA CONFIRMADA y albarán (los compone el panel)
   components/
     AuthGate.tsx               Login real con Supabase Auth (ver §9)
     Dashboard.tsx              Landing tras login: guía del proceso, KPIs y gestor de la lista Meta
     OffersList.tsx             Ofertas activas con kg en vivo (Realtime) + buscador
     OfferDetail.tsx            Detalle: priorización, canalizaciones, opt-in, cierre, cancelar
-    ProducersList.tsx          Tabla de productores: buscador + separación por lista Meta
-    EntitiesList.tsx           Tabla de entidades receptoras: buscador + badge "Meta"
+    ProducersList.tsx          Tabla de productores: buscador, separación Meta, detalle/nuevo/enviar
+    EntitiesList.tsx           Tabla de entidades: buscador, badge "Meta", detalle/nueva/enviar
+    RecordDetail.tsx           Ficha CRUD genérica (editar/crear/borrar) de productor o entidad
     ContactList.tsx            Sidebar de contactos + alta manual
     Conversation.tsx           Hilo de mensajes + composer + Realtime
 scripts/
@@ -166,11 +168,13 @@ Las tablas POMA sí tienen foreign keys. Las de mensajería **no**: `productores
 ### RLS y GRANTs — hacen falta LAS DOS capas
 
 `service_role` acceso total en todas (lo usan las Edge Functions); **`authenticated`** con
-`SELECT` y, solo en `wa_contacts`, `INSERT`/`UPDATE` y, solo en `meta_test_recipients`,
-`INSERT`/`DELETE` (el equipo gestiona la whitelist desde el Dashboard). `anon` **no tiene
-ningún privilegio** desde `20260721160000_auth_authenticated.sql`. Sin `INSERT` en
-`wa_messages` para nadie salvo el servidor: el envío pasa siempre por la Edge Function.
-Realtime en `wa_contacts`, `wa_messages`, `excedentes` y `canalizaciones`.
+`SELECT` en todas y, además, escritura donde el panel la necesita: `INSERT`/`UPDATE` en
+`wa_contacts`; `INSERT`/`DELETE` en `meta_test_recipients` (whitelist gestionada desde el
+Dashboard); **`INSERT`/`UPDATE`/`DELETE` en `productores` y `entidades`** (CRUD del panel,
+`20260722140000_crud_productores_entidades.sql`). `anon` **no tiene ningún privilegio** desde
+`20260721160000_auth_authenticated.sql`. Sin `INSERT` en `wa_messages` para nadie salvo el
+servidor: el envío pasa siempre por la Edge Function. `app_config` es **solo `service_role`**
+(§9). Realtime en `wa_contacts`, `wa_messages`, `excedentes` y `canalizaciones`.
 
 **Las políticas RLS por sí solas no bastan.** Supabase ya no expone automáticamente las
 tablas nuevas del esquema `public` a los roles de la Data API
@@ -320,6 +324,15 @@ recibir por estar en la lista Meta, mensajes recibidos/sin contestar, sesiones d
 (badge "Meta", pueden recibir), luego el resto— y `EntitiesList` marca con badge "Meta" las
 entidades que pueden recibir. Mensajería muestra la lista completa de contactos (ya no la
 conversación única).
+
+**CRUD de productores y entidades.** Cada listado tiene, por fila, «Detalle» y «Enviar
+mensaje», y en la cabecera «Nuevo/Nueva». «Detalle» abre `RecordDetail`, una ficha a pantalla
+completa (como el detalle de oferta) con **todos los campos editables**; guarda (insert/update),
+borra (con confirmación) y puede abrir la mensajería con el teléfono de la ficha. `RecordDetail`
+es **genérico**: recibe las definiciones de `src/lib/crudCampos.ts` (`PRODUCTOR_CAMPOS` /
+`ENTIDAD_CAMPOS`) y la tabla destino. Necesita los GRANT/RLS de escritura del §4. «Enviar
+mensaje» (en listado y ficha) asegura el teléfono como `wa_contact` y abre Mensajería, tanto
+para productores como para entidades.
 
 **Solo los números de la lista Meta pueden recibir.** En el detalle, "Enviar per API" se
 habilita únicamente si la entidad tiene `opt_in` **y** su teléfono está en
@@ -553,8 +566,10 @@ POMA en producción real quedan pasos de configuración y negocio.
 **Deuda técnica:**
 
 1. **Sin tests, sin linter, sin CI.** La única red de seguridad es `tsc`.
-2. **No hay roles**: cualquier usuario autenticado lo ve y lo puede todo. Con 452 fichas
-   reales, dar de alta una cuenta = dar acceso a todo.
+2. **No hay roles**: cualquier usuario autenticado lo ve y lo puede todo, y desde el CRUD
+   también **crea, edita y borra** productores y entidades (§4). Con 452 fichas reales, dar de
+   alta una cuenta = dar acceso total de lectura y escritura. Al introducir roles habrá que
+   restringir las políticas de escritura de `20260722140000_crud_productores_entidades.sql`.
 3. El intake avanza de paso aunque falle el envío: si la red falla, el productor no recibe la
    pregunta pero la sesión ya avanzó, y su siguiente mensaje se lee como respuesta al paso nuevo.
 4. `disponible_hasta` se guarda `null` (el productor responde en texto libre); el técnico lo

@@ -4,7 +4,9 @@ import { cargarNumerosTest } from '../lib/metaTest'
 import type { Productor } from '../types'
 
 interface Props {
-  onSendMessage: (productor: Productor) => Promise<void>
+  onSendMessage: (phone: string, name: string | null) => void
+  onOpenDetail: (productor: Productor) => void
+  onNew: () => void
 }
 
 interface MessageRow {
@@ -40,11 +42,10 @@ function casa(p: Productor, q: string): boolean {
   return campos.some((c) => (c ?? '').toLowerCase().includes(q))
 }
 
-export default function ProducersList({ onSendMessage }: Props) {
+export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Props) {
   const [producers, setProducers] = useState<Productor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [openingPhone, setOpeningPhone] = useState<string | null>(null)
   const [unanswered, setUnanswered] = useState<Record<string, number>>({})
   const [numerosTest, setNumerosTest] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState('')
@@ -108,12 +109,6 @@ export default function ProducersList({ onSendMessage }: Props) {
     }
   }, [])
 
-  async function handleSend(productor: Productor) {
-    if (!productor.phone) return
-    setOpeningPhone(productor.phone)
-    await onSendMessage(productor)
-  }
-
   // Filtra por la búsqueda y separa en dos grupos: los que están dados de alta en
   // Meta (pueden recibir mensajes) y el resto.
   const { enMeta, resto } = useMemo(() => {
@@ -142,19 +137,20 @@ export default function ProducersList({ onSendMessage }: Props) {
         <td>{productor.email ?? '—'}</td>
         <td>{productor.phone ? `+${productor.phone}` : '—'}</td>
         <td>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => handleSend(productor)}
-            disabled={openingPhone !== null || !productor.phone}
-            title={
-              productor.phone
-                ? undefined
-                : 'Sin teléfono móvil registrado: no se le puede escribir por WhatsApp'
-            }
-          >
-            {openingPhone === productor.phone ? 'Abriendo…' : 'Enviar mensaje'}
-          </button>
+          <div className="fila-acciones">
+            <button type="button" className="btn btn-secondary" onClick={() => onOpenDetail(productor)}>
+              Detalle
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => productor.phone && onSendMessage(productor.phone, productor.name)}
+              disabled={!productor.phone}
+              title={productor.phone ? undefined : 'Sin teléfono móvil registrado'}
+            >
+              Enviar mensaje
+            </button>
+          </div>
         </td>
       </tr>
     )
@@ -184,7 +180,10 @@ export default function ProducersList({ onSendMessage }: Props) {
     <main className="producers">
       <div className="producers-card">
         <header className="producers-header">
-          <h1>Productores</h1>
+          <div className="producers-header-top">
+            <h1>Productores</h1>
+            <button type="button" className="btn btn-primary" onClick={onNew}>Nuevo productor</button>
+          </div>
           <p className="hint">
             Los de arriba están dados de alta en Meta y pueden recibir WhatsApp; los de abajo, no.
           </p>

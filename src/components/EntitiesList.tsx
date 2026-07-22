@@ -3,6 +3,12 @@ import { supabase } from '../lib/supabase'
 import { cargarNumerosTest } from '../lib/metaTest'
 import type { Entidad } from '../types'
 
+interface Props {
+  onSendMessage: (phone: string, name: string | null) => void
+  onOpenDetail: (entidad: Entidad) => void
+  onNew: () => void
+}
+
 // Solo dígitos, para comparar teléfonos con la lista de Meta (E.164 sin '+').
 const soloDigitos = (s: string | null) => (s ?? '').replace(/\D/g, '')
 
@@ -14,7 +20,7 @@ function casa(e: Entidad, q: string): boolean {
   return campos.some((c) => (c ?? '').toLowerCase().includes(q))
 }
 
-export default function EntitiesList() {
+export default function EntitiesList({ onSendMessage, onOpenDetail, onNew }: Props) {
   const [entidades, setEntidades] = useState<Entidad[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -52,7 +58,10 @@ export default function EntitiesList() {
     <main className="producers">
       <div className="producers-card">
         <header className="producers-header">
-          <h1>Entidades receptoras</h1>
+          <div className="producers-header-top">
+            <h1>Entidades receptoras</h1>
+            <button type="button" className="btn btn-primary" onClick={onNew}>Nueva entidad</button>
+          </div>
           <p className="hint">
             Entidades sociales que reciben los excedentes. El badge «Meta» marca las que pueden
             recibir mensajes por estar dadas de alta en Meta.
@@ -84,16 +93,16 @@ export default function EntitiesList() {
                 <tr>
                   <th>Nombre</th>
                   <th>Población</th>
-                  <th>Área</th>
                   <th>Teléfono</th>
-                  <th>Email</th>
                   <th>Prio.</th>
                   <th>Estat</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {filtradas.map((e) => {
-                  const enMeta = e.telefono != null && numerosTest.has(soloDigitos(e.telefono))
+                  const tel = soloDigitos(e.telefono)
+                  const enMeta = tel !== '' && numerosTest.has(tel)
                   return (
                     <tr key={e.id}>
                       <td>
@@ -101,11 +110,25 @@ export default function EntitiesList() {
                         {enMeta && <span className="meta-badge">Meta</span>}
                       </td>
                       <td>{e.poblacion ?? '—'}</td>
-                      <td>{e.area_geografica ?? '—'}</td>
-                      <td>{e.telefono ? `+${soloDigitos(e.telefono)}` : '—'}</td>
-                      <td>{e.email ?? '—'}</td>
+                      <td>{tel ? `+${tel}` : '—'}</td>
                       <td>{e.prioritat ?? '—'}</td>
                       <td>{e.estat ?? '—'}</td>
+                      <td>
+                        <div className="fila-acciones">
+                          <button type="button" className="btn btn-secondary" onClick={() => onOpenDetail(e)}>
+                            Detalle
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => tel && onSendMessage(tel, e.nombre)}
+                            disabled={!tel}
+                            title={tel ? undefined : 'Sin teléfono registrado'}
+                          >
+                            Enviar mensaje
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   )
                 })}

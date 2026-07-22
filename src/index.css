@@ -828,3 +828,52 @@ input:focus {
 
 .meta-alta { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .meta-alta input { flex: 1; min-width: 12rem; }
+
+/* ─── CRUD: cabecera de listado, acciones de fila y formulario de detalle ─── */
+.producers-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.fila-acciones {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.detail-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+}
+
+.detail-field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.detail-field-full { grid-column: 1 / -1; }
+
+.detail-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.detail-field input,
+.detail-field textarea,
+.detail-field select {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+}
+
+.detail-field textarea { resize: vertical; }
+
+@media (max-width: 640px) {
+  .detail-grid { grid-template-columns: 1fr; }
+}
