@@ -103,7 +103,9 @@ export default function EntitiesList({ onSendMessage, onOpenDetail, onNew }: Pro
                       <TableCell className="whitespace-nowrap tabular-nums">
                         {tel ? `+${tel}` : '—'}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{e.email ?? '—'}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <div className="max-w-[180px] break-all leading-tight">{e.email ?? '—'}</div>
+                      </TableCell>
                       <TableCell>{e.prioritat ?? '—'}</TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-2">

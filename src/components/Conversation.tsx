@@ -8,6 +8,7 @@ import type { WaContact, WaMessage } from '../types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface Props {
   contact: WaContact
@@ -162,19 +163,27 @@ export default function Conversation({ contact }: Props) {
           <Lock className="mt-0.5 size-4 shrink-0" />
           <span>
             <strong>{contact.name ?? 'Este contacto'}</strong> aún no te ha escrito, así que WhatsApp
-            no deja enviarle texto libre. Pulsa <strong>«Iniciar (plantilla)»</strong> para mandarle el
-            primer mensaje; cuando responda se abre la ventana de 24 h y ya podrás escribirle.
+            no deja enviarle texto libre. Pulsa <strong>«Enviar 1r mensaje»</strong> para hacer el primer
+            contacto; cuando responda se abre la ventana de 24 h y ya podrás escribirle.
             {' '}<em>En el entorno de test la plantilla es «hello_world»; una de bienvenida propia requiere aprobarla en Meta.</em>
           </span>
         </div>
       )}
 
       <footer className="flex items-center gap-2 border-t bg-card px-5 py-3">
-        <Button type="button" variant={ventanaAbierta ? 'outline' : 'default'}
-          onClick={handleSendTemplate} disabled={sending}
-          title="Envía una plantilla para iniciar la conversación (abre el primer contacto)">
-          {ventanaAbierta ? 'Plantilla' : 'Iniciar (plantilla)'}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button type="button" variant={ventanaAbierta ? 'outline' : 'default'}
+              onClick={handleSendTemplate} disabled={sending}>
+              {ventanaAbierta ? 'Plantilla' : 'Enviar 1r mensaje'}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs text-center">
+            WhatsApp no te deja escribir tú primero. Este botón envía una <strong>plantilla aprobada</strong>
+            {' '}(en el entorno de test, «hello_world») para hacer el primer contacto. Cuando la persona
+            responda, se abre la ventana de 24 h y ya podrás escribirle con normalidad.
+          </TooltipContent>
+        </Tooltip>
         <form className="flex flex-1 gap-2" onSubmit={handleSendText}>
           <Input
             placeholder={ventanaAbierta ? 'Escribe un mensaje…' : 'Primero inicia con la plantilla…'}
