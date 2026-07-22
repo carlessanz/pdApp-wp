@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Lock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { sendWhatsApp } from '../lib/whatsapp'
 import { cn } from '../lib/utils'
@@ -108,6 +109,11 @@ export default function Conversation({ contact }: Props) {
     if (!result.ok) setNotice(noticeFromError(result.data))
   }
 
+  // La ventana de servicio de 24 h se abre cuando el contacto escribe. Fuera de
+  // ella WhatsApp NO permite texto libre: hay que iniciar con una plantilla.
+  const ventanaAbierta = contact.last_inbound_at != null &&
+    Date.now() - new Date(contact.last_inbound_at).getTime() < 24 * 60 * 60 * 1000
+
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-background">
       <header className="flex items-center justify-between border-b bg-card px-5 py-3">
@@ -150,15 +156,31 @@ export default function Conversation({ contact }: Props) {
         </div>
       )}
 
+      {/* Fuera de la ventana de 24 h: no se puede escribir texto libre, solo iniciar con plantilla. */}
+      {!ventanaAbierta && (
+        <div className="mx-5 mb-1 flex items-start gap-2 rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+          <Lock className="mt-0.5 size-4 shrink-0" />
+          <span>
+            <strong>{contact.name ?? 'Este contacto'}</strong> aún no te ha escrito, así que WhatsApp
+            no deja enviarle texto libre. Pulsa <strong>«Iniciar (plantilla)»</strong> para mandarle el
+            primer mensaje; cuando responda se abre la ventana de 24 h y ya podrás escribirle.
+            {' '}<em>En el entorno de test la plantilla es «hello_world»; una de bienvenida propia requiere aprobarla en Meta.</em>
+          </span>
+        </div>
+      )}
+
       <footer className="flex items-center gap-2 border-t bg-card px-5 py-3">
-        <Button type="button" variant="outline" onClick={handleSendTemplate} disabled={sending}
-          title="Envía la plantilla hello_world para abrir la ventana de 24 horas">
-          Plantilla
+        <Button type="button" variant={ventanaAbierta ? 'outline' : 'default'}
+          onClick={handleSendTemplate} disabled={sending}
+          title="Envía una plantilla para iniciar la conversación (abre el primer contacto)">
+          {ventanaAbierta ? 'Plantilla' : 'Iniciar (plantilla)'}
         </Button>
         <form className="flex flex-1 gap-2" onSubmit={handleSendText}>
-          <Input placeholder="Escribe un mensaje…" value={draft}
-            onChange={(e) => setDraft(e.target.value)} disabled={sending} />
-          <Button type="submit" disabled={sending || !draft.trim()}>
+          <Input
+            placeholder={ventanaAbierta ? 'Escribe un mensaje…' : 'Primero inicia con la plantilla…'}
+            value={draft} onChange={(e) => setDraft(e.target.value)}
+            disabled={sending || !ventanaAbierta} />
+          <Button type="submit" disabled={sending || !draft.trim() || !ventanaAbierta}>
             {sending ? 'Enviando…' : 'Enviar'}
           </Button>
         </form>
