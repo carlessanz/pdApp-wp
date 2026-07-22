@@ -356,6 +356,29 @@ Requisito explícito mientras estemos en pruebas. Se cumple así:
 - La app de Vercel tiene además Deployment Protection (SSO), que es una capa de
   plataforma independiente de todo lo anterior.
 
+### ⚠️ No hacer `supabase config push`
+
+Los flags de auth de **remoto** (`external_email_enabled`, `disable_signup`) se gestionan
+por el **Dashboard o el Management API**, no por `config.toml`. Dos razones:
+
+1. `config push` ya falla a mitad (error de Storage con esta versión del CLI).
+2. Peor: arrastra `enable_signup = false` del toml y **desactiva el login por email en
+   remoto** — GoTrue responde entonces "Email logins are disabled", que no es un error de
+   contraseña sino del proveedor apagado. Pasó el 21-07-2026 y dejó fuera al equipo.
+
+Para reactivarlo (Management API, con el token del CLI en el keychain):
+
+```bash
+TOKEN=$(security find-generic-password -s "Supabase CLI" -w)
+curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  https://api.supabase.com/v1/projects/<ref>/config/auth \
+  -d '{"external_email_enabled": true}'
+```
+
+En el **CLI local** los dos flags no son independientes: `external.email` sigue a
+`enable_signup`, así que con `enable_signup = false` el login por email tampoco funciona en
+local. No importa en la práctica: `npm run dev` usa `.env.local`, que apunta a **remoto**.
+
 ## 10. Variables de entorno
 
 **Frontend** (`.env.local`, ignorado por git; plantilla en `.env.local.example`):
