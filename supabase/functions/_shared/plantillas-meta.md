@@ -13,6 +13,40 @@ parámetros. Abajo va el mapeo desde los campos del excedente (`componerTextoOfe
 
 ---
 
+## 0. Plantillas de primer contacto (salutació) — piden responder «OK»
+
+Sirven para el **primer contacto** (fuera de la ventana de 24 h): abren la conversación pidiendo
+que respondan «OK». La app las elige por rol desde `src/lib/plantillas.ts`
+(`plantillaPrimerContacte`); hoy con el flag `PLANTILLES_CA_APROVADES = false` → mientras se está
+en test se envía `hello_world`, y al aprobarlas en Meta y poner el flag a `true` se envían estas.
+
+### 0a. `salutacio_productor` — primer contacto con un productor
+
+- **Nombre:** `salutacio_productor`
+- **Categoría:** `UTILITY`
+- **Idioma:** `ca`
+- **Body** (sin variables):
+
+```
+Hola! Som l'equip de POMA d'Espigoladors 🌱. T'ajudem a canalitzar els teus excedents agrícoles. Respon OK per activar la conversa i poder oferir-nos excedents quan vulguis. Gràcies!
+```
+
+### 0b. `salutacio_entitat` — primer contacto con una entidad receptora
+
+- **Nombre:** `salutacio_entitat`
+- **Categoría:** `UTILITY`
+- **Idioma:** `ca`
+- **Body** (sin variables):
+
+```
+Hola! Som l'equip de POMA d'Espigoladors 🌱. Col·laborem amb entitats socials per aprofitar excedents agrícoles. Respon OK per activar la conversa i començar a rebre les nostres ofertes. Gràcies!
+```
+
+Sin variables → aprobación más fácil. Si Meta las reclasifica a `MARKETING`, requerirán opt-in de
+marketing; en ese caso valorar añadir un botón de respuesta rápida «OK» en lugar de pedirlo en el texto.
+
+---
+
 ## 1. `oferta_excedent` — aviso de oferta a una entidad
 
 - **Nombre:** `oferta_excedent`
