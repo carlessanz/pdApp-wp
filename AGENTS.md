@@ -155,7 +155,7 @@ en `src/index.css` (navy `#234C66` / crema `#E0EBC7` / coral `#EE7A5F`, fuente S
 alias `@/` → `src/`. Iconos `lucide-react`, toasts `sonner`, `cn()` en `src/lib/utils.ts`. El
 logo (`public/logo-poma.svg`) y el favicon están en `public/`.
 
-**Responsive** (breakpoint `md`, 768px). El **header** ocupa el 90% del ancho y en móvil se parte
+**Responsive** (breakpoint `md`, 768px). El **header** ocupa el 98% del ancho y en móvil se parte
 en dos filas (logo + idioma/salir arriba, nav con scroll horizontal debajo). Los **listados** van
 en tabla con `overflow-x-auto` (scroll horizontal en móvil); los **detalles/CRUD** usan grids
 `sm:grid-cols-2`. La **mensajería** usa patrón **lista↔conversación**: en móvil la lista ocupa toda
