@@ -131,6 +131,8 @@ export interface Excedente {
   responsable: string | null
   observacions: string | null
   valor_eur: number | null
+  /** Preu mínim (€/kg) que fixa el productor; només venda/maquila */
+  preu_minim: number | null
   texto_oferta: string | null
   estado: EstadoExcedente
   motivo_no_colocada: string | null
@@ -162,7 +164,19 @@ export interface OfertaRespuesta {
   /** E.164 sin '+'; casa la respuesta entrante con la fila pendiente */
   telefono: string | null
   canal: 'whatsapp' | 'email'
+  /** Respuesta de la ENTIDAD */
   estado: 'pendent' | 'acceptada' | 'rebutjada'
+  kg_solicitados: number | null
+  caixes_solicitades: number | null
+  preu_ofert: number | null
+  /** Decisión del SUPERADMIN (aprueba y convierte en canalización) */
+  aprovacio: 'pendent' | 'aprovada' | 'rebutjada'
+  aprovat_at: string | null
+  motiu_aprovacio: string | null
+  canalizacion_id: string | null
+  /** Estado del diálogo de aceptación por WhatsApp */
+  dialeg_pas: string | null
+  dialeg_dades: Record<string, unknown>
   mensaje_respuesta: string | null
   enviado_at: string
   respondido_at: string | null

@@ -53,6 +53,14 @@ function estadoRespuestaClases(estado: string): string {
   }
 }
 
+function aprovacioClases(a: string): string {
+  switch (a) {
+    case 'aprovada': return 'bg-primary/15 text-primary'
+    case 'rebutjada': return 'bg-red-100 text-red-700'
+    default: return 'bg-amber-100 text-amber-800'
+  }
+}
+
 export default function OfferDetail({ excedente, onBack }: Props) {
   const { t } = useT()
   const [exc, setExc] = useState<Excedente>(excedente)
@@ -188,6 +196,44 @@ export default function OfferDetail({ excedente, onBack }: Props) {
       estado,
       respondido_at: estado === 'pendent' ? null : new Date().toISOString(),
     }).eq('id', id)
+    await recargarRespuestas()
+  }
+
+  // El superadmin aprueba una aceptación y la convierte en canalización: crea la
+  // fila en `canalizaciones` con los kg acordados, enlaza ambas (canalizacion_id) y
+  // hace avanzar el excedente (parcial/bloqueada), con la misma regla que el alta manual.
+  async function aprovarRespuesta(e: FormEvent<HTMLFormElement>, r: RespuestaConEntidad) {
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    const kg = Number(fd.get('kg') || 0)
+    if (!r.entidad_id || !kg) { toast.error(t('od.no_text')); return }
+    const preuRaw = String(fd.get('preu') ?? '')
+    const preu = preuRaw !== '' ? Number(preuRaw) : null
+    const { data: canal, error } = await supabase.from('canalizaciones').insert({
+      excedente_id: excedente.id, entidad_id: r.entidad_id, kg_confirmados: kg,
+      comentarios: preu != null ? `Preu acordat: ${preu} €/kg` : null,
+    }).select('id').single()
+    if (error) { toast.error(error.message); return }
+    await supabase.from('oferta_respuestas').update({
+      aprovacio: 'aprovada', aprovat_at: new Date().toISOString(),
+      kg_solicitados: kg, preu_ofert: preu, canalizacion_id: canal.id,
+    }).eq('id', r.id)
+    const nuevoCanalizado = canalizados + kg
+    if (total > 0 && nuevoCanalizado >= total) {
+      await supabase.from('excedentes').update({ estado: 'bloqueada' }).eq('id', excedente.id)
+    } else if (exc.estado === 'publicada') {
+      await supabase.from('excedentes').update({ estado: 'parcial' }).eq('id', excedente.id)
+    }
+    toast.success(t('od.approved'))
+    await recargar(); await recargarRespuestas()
+  }
+
+  async function rebutjarAprovacio(r: RespuestaConEntidad) {
+    const motiu = window.prompt(t('od.reject_reason'))
+    if (motiu === null) return
+    await supabase.from('oferta_respuestas').update({
+      aprovacio: 'rebutjada', motiu_aprovacio: motiu || null, aprovat_at: new Date().toISOString(),
+    }).eq('id', r.id)
     await recargarRespuestas()
   }
 
@@ -348,26 +394,57 @@ export default function OfferDetail({ excedente, onBack }: Props) {
           {respuestas.map((r) => {
             const nombre = r.entidades?.nombre ?? r.telefono ?? '—'
             const cuando = r.respondido_at ?? r.enviado_at
+            const esVenda = exc.modalitat === 'venda' || exc.modalitat === 'maquila'
             return (
               <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2.5 text-sm">
                 <div className="flex items-center gap-2.5">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${estadoRespuestaClases(r.estado)}`}>
                     {t(`od.rs_${r.estado}`)}
                   </span>
+                  {r.estado === 'acceptada' && (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${aprovacioClases(r.aprovacio)}`}>
+                      {t(`od.ap_${r.aprovacio}`)}
+                    </span>
+                  )}
                   <div>
                     <div className="font-medium">{nombre}</div>
                     <div className="text-xs text-muted-foreground">
                       {t(`od.ch_${r.canal}`)} · {fechaCorta(cuando)}
+                      {r.kg_solicitados != null ? ` · ${r.kg_solicitados} ${t('od.rs_kg')}` : ''}
+                      {r.preu_ofert != null ? ` · ${r.preu_ofert} ${t('od.rs_preu')}` : ''}
                       {r.mensaje_respuesta ? ` · «${r.mensaje_respuesta}»` : ''}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button size="sm" variant="outline" disabled={r.estado === 'acceptada'}
-                    onClick={() => void marcarRespuesta(r.id, 'acceptada')}>{t('od.rs_accept')}</Button>
-                  <Button size="sm" variant="outline" disabled={r.estado === 'rebutjada'}
-                    onClick={() => void marcarRespuesta(r.id, 'rebutjada')}>{t('od.rs_reject')}</Button>
-                </div>
+                {r.estado === 'pendent' && (
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="outline"
+                      onClick={() => void marcarRespuesta(r.id, 'acceptada')}>{t('od.rs_accept')}</Button>
+                    <Button size="sm" variant="outline"
+                      onClick={() => void marcarRespuesta(r.id, 'rebutjada')}>{t('od.rs_reject')}</Button>
+                  </div>
+                )}
+                {r.estado === 'acceptada' && r.aprovacio === 'pendent' && (
+                  <form className="flex flex-wrap items-center gap-1" onSubmit={(ev) => void aprovarRespuesta(ev, r)}>
+                    <Input name="kg" type="number" required defaultValue={r.kg_solicitados ?? ''}
+                      placeholder={t('od.kg_ph')} className="h-8 w-20" />
+                    {esVenda && (
+                      <Input name="preu" type="number" step="0.01" defaultValue={r.preu_ofert ?? exc.preu_minim ?? ''}
+                        placeholder={t('od.rs_preu')} className="h-8 w-20" />
+                    )}
+                    <Button size="sm" type="submit">{t('od.approve')}</Button>
+                    <Button size="sm" variant="outline" type="button"
+                      onClick={() => void rebutjarAprovacio(r)}>{t('od.reject_appr')}</Button>
+                  </form>
+                )}
+                {r.estado === 'acceptada' && r.aprovacio === 'aprovada' && (
+                  <span className="text-xs font-medium text-primary">{t('od.approved_kg', { n: r.kg_solicitados ?? 0 })}</span>
+                )}
+                {r.estado === 'acceptada' && r.aprovacio === 'rebutjada' && (
+                  <span className="text-xs text-red-700">
+                    {t('od.rejected_appr')}{r.motiu_aprovacio ? `: ${r.motiu_aprovacio}` : ''}
+                  </span>
+                )}
               </div>
             )
           })}

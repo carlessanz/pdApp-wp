@@ -44,6 +44,7 @@ const PASOS = [
   "disponible_fins",
   "horari",
   "modalitat",
+  "preu_minim",
   "causa",
   "observacions",
 ] as const;
@@ -84,9 +85,15 @@ export function esCancelar(texto: string | null): boolean {
   return t === "STOP" || t === "CANCELLAR" || t === "CANCELAR";
 }
 
-function siguientePaso(paso: Paso): Paso | null {
+function siguientePaso(paso: Paso, datos: Record<string, unknown>): Paso | null {
   const i = PASOS.indexOf(paso);
-  return i >= 0 && i < PASOS.length - 1 ? PASOS[i + 1] : null;
+  let sig: Paso | null = i >= 0 && i < PASOS.length - 1 ? PASOS[i + 1] : null;
+  // El preu mínim solo se pregunta en venda/maquila; en donació se salta.
+  if (sig === "preu_minim" && datos.modalitat === "donacio") {
+    const j = PASOS.indexOf("preu_minim");
+    sig = j >= 0 && j < PASOS.length - 1 ? PASOS[j + 1] : null;
+  }
+  return sig;
 }
 
 /** Trocea las opciones en páginas de 9 y añade "Més…" cuando queda resto. */
@@ -216,6 +223,12 @@ async function preguntar(
         { id: "modalitat:maquila", titulo: "Maquila" },
       ]);
       return;
+    case "preu_minim":
+      await sendText(
+        supabase, to,
+        "A quin preu mínim (€/kg) la vols oferir? Escriu un número (p. ex. 0.80).",
+      );
+      return;
     case "causa": {
       const { data } = await supabase.from("causas").select("codigo, nombre").order("nombre");
       const causas = (data ?? []) as Array<{ codigo: string; nombre: string }>;
@@ -274,6 +287,12 @@ async function interpretar(
         if (factor?.kg_por_unidad) kg = kg * Number(factor.kg_por_unidad);
       }
       return kg;
+    }
+    case "preu_minim": {
+      // Preu mínim en €/kg: se queda con el primer número.
+      const num = t.match(/\d+([.,]\d+)?/);
+      if (!num) return null;
+      return Number(num[0].replace(",", "."));
     }
     case "caixes":
       if (t === "-") return null_ok();
@@ -436,7 +455,7 @@ export async function procesarIntake(
   datos[paso] = valor === OMITIDO ? null : valor;
   datos._intentos = 0;
 
-  const siguiente = siguientePaso(paso);
+  const siguiente = siguientePaso(paso, datos);
   if (siguiente) {
     await guardar(supabase, sesion, { paso_actual: siguiente, datos_parciales: datos });
     await preguntar(supabase, { ...sesion, datos_parciales: datos }, siguiente);

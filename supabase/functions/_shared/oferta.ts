@@ -65,12 +65,13 @@ export function componerTextoOferta(campos: {
   disponible: string;
   horari: string;
   modalitat: string;
+  preu?: string;
   causa: string;
   envasos: string;
   responsable: string;
   observacions: string;
 }): string {
-  return [
+  const lineas = [
     "📢 *OFERTA DISPONIBLE*",
     "",
     `🌿 PRODUCTE: ${campos.producte}`,
@@ -82,11 +83,18 @@ export function componerTextoOferta(campos: {
     `📅 DISPONIBLE: ${campos.disponible}`,
     `⏰ HORARI RECOLLIDA: ${campos.horari}`,
     `💰 MODALITAT: ${campos.modalitat}`,
+  ];
+  // Preu mínim solo en venda/maquila (el productor lo fija en l'intake).
+  if (campos.preu) lineas.push(`💶 PREU MÍNIM: ${campos.preu}`);
+  lineas.push(
     `🔴 CAUSA: ${campos.causa}`,
     `♻️ ENVASOS: ${campos.envasos}`,
     `👥 RESPONSABLE: ${campos.responsable}`,
     `📝 OBSERVACIONS: ${campos.observacions}`,
-  ].join("\n");
+    "",
+    "✅ Per acceptar aquesta oferta respon *SÍ* (o *NO* per descartar-la).",
+  );
+  return lineas.join("\n");
 }
 
 /** Crea el excedente a partir de una sesión completa y avisa al productor. */
@@ -113,6 +121,7 @@ export async function crearExcedenteDesdeSesion(
     .from("productores").select("poblacion, empresa").eq("id", productor.id).maybeSingle();
 
   const kg = Number(d.kg ?? 0);
+  const preuMinim = d.preu_minim != null ? Number(d.preu_minim) : null;
   const municipio = ubicacion?.municipio ?? fichaProductor?.poblacion ?? "";
   const idExcedente = await generarId(supabase, productor.name, producto);
 
@@ -125,6 +134,7 @@ export async function crearExcedenteDesdeSesion(
     disponible: String(d.disponible_fins ?? ""),
     horari: String(d.horari ?? ""),
     modalitat: ETIQUETA_MODALITAT[String(d.modalitat ?? "")] ?? String(d.modalitat ?? ""),
+    preu: preuMinim != null ? `${preuMinim} €/kg` : undefined,
     causa: causa?.nombre ?? String(d.causa ?? ""),
     envasos: String(d.retorn ?? ""),
     // Se asigna en el panel; el productor no lo elige.
@@ -144,6 +154,7 @@ export async function crearExcedenteDesdeSesion(
     tipo_caixa: d.tipus_caixa ?? null,
     retorn_envasos: d.retorn ?? null,
     modalitat: d.modalitat ?? null,
+    preu_minim: preuMinim,
     causa: causa?.nombre ?? null,
     causa_codigo: d.causa ?? null,
     disponible_hasta: null, // texto libre del productor; se normaliza en el panel

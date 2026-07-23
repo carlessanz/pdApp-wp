@@ -105,7 +105,7 @@ derivacion_espigueo, historial_estado, webhook_log y catálogos.
 | `convenio` de colaboración | — | ⬜ |
 | `excedente` | `excedentes` | ✅ |
 | `demanda` | — | ⬜ |
-| `interes` (solicitud de receptor) | `oferta_respuestas` (aceptación sí/no) | 🟡 |
+| `interes` (solicitud de receptor) | `oferta_respuestas` (aceptación con kg/preu + aprobación del superadmin → canalización) | 🟡 |
 | `sugerencia_match` persistida | `priorizar-entidades` (Edge Function pura, no persiste) | 🟡 |
 | `operacion`/`entrega` (lotes; kg prev/recib/valid) | `canalizaciones` (por entidad; `kg_confirmados`/`kg_reales`) | 🟡 |
 | `albaran`/`albaran_linea` (serie, estados, QR) | texto *placeholder* (`src/lib/textos.ts`) | ⬜ |
@@ -261,18 +261,25 @@ de prueba que habilita el envío a la entidad (§8).
 **`excedentes`** — cabecera de la oferta. `id_excedente` UNIQUE con formato
 `E-AAMMDD-XXX-YYY-N`. `estado` ∈ `borrador` · `publicada` · `parcial` · `bloqueada` ·
 `cerrada` · `no_colocada` · **`cancelada`** (anulada desde el panel; check en
-`20260722130100_estado_cancelada.sql`). `modalitat` ∈ `donacio` · `venda` · `maquila`.
+`20260722130100_estado_cancelada.sql`). `modalitat` ∈ `donacio` · `venda` · `maquila`. **`preu_minim`**
+(numeric €/kg, `20260723130000_aceptacion_ofertas.sql`): preu mínim que fija el productor en el intake,
+solo en `venda`/`maquila`; sale en `texto_oferta` y la entidad lo confirma al aceptar (§5).
 
 **`canalizaciones`** — detalle por entidad: `kg_confirmados`, `kg_reales`, cajas, albaranes,
 firmas. Relación **`excedentes` 1—N `canalizaciones`** (una oferta, varias entidades).
 
-**`oferta_respuestas`** — flujo de **aceptación** (`20260723100000_oferta_respuestas.sql`):
-`excedente_id` (FK, `on delete cascade`), `entidad_id` (FK, `on delete set null`), `telefono`,
-`canal` (`whatsapp`·`email`), `estado` (`pendent`·`acceptada`·`rebutjada`), `mensaje_respuesta`,
-`enviado_at`, `respondido_at`. `unique (excedente_id, entidad_id)` (reenviar actualiza, no
-duplica) e índice `(telefono, estado)`. Es **distinta de `canalizaciones`**: aquella registra
-kg; esta, el sí/no de la entidad. Al enviar una oferta desde `OfferDetail` se deja aquí una fila
-`pendent`; la respuesta por WhatsApp la actualiza el webhook (§5). Realtime activo.
+**`oferta_respuestas`** — flujo de **aceptación** (`20260723100000_oferta_respuestas.sql`; ampliada
+en `20260723130000_aceptacion_ofertas.sql`): `excedente_id` (FK, `on delete cascade`), `entidad_id`
+(FK, `on delete set null`), `telefono`, `canal` (`whatsapp`·`email`), `mensaje_respuesta`,
+`enviado_at`, `respondido_at`, `unique (excedente_id, entidad_id)` (reenviar actualiza, no duplica)
+e índice `(telefono, estado)`. Tiene **dos ejes**: **`estado`** (`pendent`·`acceptada`·`rebutjada`) =
+respuesta de la **entidad**; **`aprovacio`** (`pendent`·`aprovada`·`rebutjada`) = decisión del
+**superadmin**. La aceptación guarda `kg_solicitados`, `caixes_solicitades` y `preu_ofert`; el diálogo
+de WhatsApp (SÍ → kg → confirmar preu, §5) guarda su avance en `dialeg_pas`/`dialeg_dades`; al aprobar
+se crea una fila en `canalizaciones` y se enlaza con `canalizacion_id` (+`aprovat_at`,
+`motiu_aprovacio`). Es **distinta de `canalizaciones`**: aquella registra los kg definitivos; esta, el
+sí/no de la entidad y su aprobación. Al enviar desde `OfferDetail` se deja una fila `pendent`; el
+webhook la actualiza (§5). Realtime activo.
 
 **`intake_sessions`** — estado del flujo conversacional: `telefono`, `paso_actual`,
 `datos_parciales jsonb`, `excedente_id` (sin uso), `updated_at` y
@@ -360,15 +367,18 @@ marcado `es_test`; si no, se deja en la consola para una persona (§8).
 `opt_in_at`. **Ambas responden confirmación** por WhatsApp (estamos en ventana, es gratis) y
 se registran como `outbound`.
 
-**Respuesta de una entidad a una oferta (aceptación)** — `procesarRespuestaOferta()`
-(`_shared/respuestas.ts`), enganchada en el webhook **antes del intake y con prioridad sobre él**.
-Solo actúa sobre **texto plano** (los pasos con botones del intake son `interactive` y no se tocan)
-que clasifique claramente como sí/no. Si lo es, busca la fila `pendent` de `oferta_respuestas` más
-reciente para ese teléfono (**la última oferta enviada**), la pasa a `acceptada`/`rebutjada`,
-guarda el texto y **responde confirmación** por WhatsApp. **Resuelve el doble rol**: un número que
-es productor **y** entidad, si tiene una oferta pendiente y contesta sí/no, se atiende aquí; con
-cualquier otro mensaje cae al intake como productor. Si no hay fila pendiente o el texto no es
-sí/no, devuelve `false` y sigue el flujo normal.
+**Aceptación de una oferta (diálogo)** — `procesarRespuestaOferta()` (`_shared/respuestas.ts`),
+enganchada en el webhook **antes del intake y con prioridad sobre él**. Trabaja sobre la fila
+`pendent` de `oferta_respuestas` más reciente para ese teléfono (**la última oferta enviada**) y
+conduce un **diálogo corto**: un **sí** arranca `dialeg_pas='kg'` («quants kg vols?»); tras el número,
+si la modalitat es `venda`/`maquila` con `preu_minim` pide **confirmar el preu** con botones
+(`accept:preu_*`) y finaliza dejando `estado='acceptada'`, `kg_solicitados`, `preu_ofert` y
+`aprovacio='pendent'`; un **no** claro (en cualquier paso) pasa a `rebutjada`. **Mientras el diálogo
+está en curso la fila sigue `pendent`** (así el emparejamiento la sigue encontrando). Solo consume
+interactivos con prefijo `accept:` (los del intake, `familia:`…, se dejan pasar). **Resuelve el doble
+rol**: un número productor **y** entidad con oferta pendiente que contesta se atiende aquí; sin oferta
+pendiente o texto no clasificable, devuelve `false` y cae al intake. El **superadmin aprueba** la
+aceptación desde el panel y la convierte en canalización (§6ter).
 
 **Intake conversacional** — un productor escribe → el webhook lo identifica por `phone` en
 `productores` → `procesarIntake()` (`_shared/intake.ts`). El estado vive en
@@ -437,10 +447,11 @@ Peculiaridades verificadas de los datos, todas manejadas por el script:
 
 ## 6bis. El intake conversacional
 
-Trece pasos: `familia` → `producte` → `varietat` → `kg` → `caixes` → `tipus_caixa` →
-`retorn` → `ubicacio` → `disponible_fins` → `horari` → `modalitat` → `causa` →
+Trece pasos (más uno condicional): `familia` → `producte` → `varietat` → `kg` → `caixes` →
+`tipus_caixa` → `retorn` → `ubicacio` → `disponible_fins` → `horari` → `modalitat` →
+**`preu_minim`** (solo si `modalitat` es `venda`/`maquila`; en `donació` se salta) → `causa` →
 `observacions`. Las opciones salen **siempre de las tablas** (`productos`, `causas`), nunca
-escritas a mano.
+escritas a mano. El `preu_minim` (€/kg) queda en `excedentes` y aparece en la oferta (§5/§6ter).
 
 **Arranca preguntando, no con el cuestionario.** Ante un mensaje que no sea ALTA/BAJA de un
 productor sin sesión abierta, POMA responde con una **guía corta** (qué es, qué preguntará, y
@@ -511,11 +522,15 @@ usables en el número de test (solo `hello_world`). En producción, con la plant
 volvería a enviar como plantilla. Si la entidad no ha escrito aún, el envío responde
 `409 window_closed`/`404 unknown_contact` y se le pide que escriba primero.
 
-**Aceptación de la oferta (panel).** Cada envío desde `OfferDetail` (WhatsApp o email) deja una
-fila `pendent` en `oferta_respuestas`. La entidad que responde por WhatsApp la actualiza sola
-(§5) y el detalle lo refleja **en vivo** (Realtime) en la tarjeta «Respostes de les entitats»,
-con badge de estado. El técnico puede **marcar a mano** acceptada/rebutjada (imprescindible para
-el email, que no tiene respuesta automática).
+**Aceptación y aprobación de la oferta (panel).** Cada envío desde `OfferDetail` (WhatsApp o email)
+deja una fila `pendent` en `oferta_respuestas`. La entidad que responde por WhatsApp la actualiza sola
+mediante el diálogo (§5) —con `kg_solicitados` y `preu_ofert`— y el detalle lo refleja **en vivo**
+(Realtime) en «Respostes de les entitats», con badge de `estado` **y** de `aprovacio`. El técnico puede
+**marcar a mano** acceptada/rebutjada (imprescindible para el email, sin respuesta automática). Para una
+fila `acceptada` pendiente de aprobar, el **superadmin** ajusta kg/preu y pulsa **«Aprovar i
+canalitzar»**: se crea la `canalización` (`kg_confirmados`), se enlaza (`canalizacion_id`) y el
+excedente avanza a `parcial`/`bloqueada` (misma regla que el alta manual); o **«Rebutjar»** con motiu.
+Hoy cualquier `authenticated` puede aprobar (no hay roles; §12).
 
 **Copiar el texto de la oferta** escribe al portapapeles `text/plain` (con `\n`) **y** `text/html`
 con **cada línea en su propio `<div>`** (`textoAHtmlPortapapeles`): así los saltos se conservan al
@@ -831,13 +846,18 @@ POMA en producción real quedan pasos de configuración y negocio.
     `hello_world`); solo actúa en producción con `PLANTILLES_CA_APROVADES=true`.
 16. **Doble rol** productor+entidad (p. ej. Sebas Sale, Carles Sanz, altas de prueba): tablas
     separadas sin FK, un teléfono puede estar en ambas. El webhook lo desambigua por prioridad
-    (§5), pero un productor-entidad a media intake que reciba una oferta y conteste sí/no en texto
-    verá su respuesta tomada como aceptación, no como paso del intake.
+    (§5), pero el **diálogo de aceptación** (SÍ → kg → preu) tiene prioridad sobre el intake: un
+    productor-entidad con una oferta `pendent` que responda verá su conversación conducida por la
+    aceptación (mientras `dialeg_pas` esté activo consume sus mensajes), no por el intake.
 17. Coexisten dos gates: **`es_test`** (fuente de verdad de la app, §8) y las whitelists
     `meta_test_recipients`/`email_test_recipients` (requisito técnico de Meta en test). En test un
     destinatario debe cumplir **ambos**; se inicializaron alineados. El **Dashboard** aún gestiona
     y mide por las listas de Meta (no por `es_test`): coherente hoy porque coinciden, a revisar al
     pasar a producción de Meta o si se marca `es_test` a alguien fuera de la lista de Meta.
+18. **Aprobación sin roles**: el paso «Aprovar i canalitzar» de una aceptación (§6ter) lo puede hacer
+    **cualquier** usuario `authenticated`; cuando existan roles (§9/§12.2) habrá que restringirlo al
+    superadmin. El «acuerdo del productor» que exige el funcional queda implícito en la coordinación
+    asistida del equipo (mejora futura: señal explícita del productor).
 
 ## 13. Al terminar cualquier cambio
 
