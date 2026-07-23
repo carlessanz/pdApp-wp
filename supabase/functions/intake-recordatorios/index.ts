@@ -15,6 +15,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { sendBotones } from "../_shared/whatsapp.ts";
+import { esTelefonoTest, modoTestActivo } from "../_shared/gate.ts";
 
 // Ventana de inactividad: se avisa a partir de 10 min y hasta la caducidad de 12 h
 // (a partir de ahí la sesión se descarta sola en el próximo mensaje).
@@ -61,8 +62,12 @@ Deno.serve(async (req) => {
     return json({ error: "Error consultando sesiones" }, 500);
   }
 
+  // Modo test global (§8): si está activo, solo se recuerda a usuarios es_test.
+  const modoTest = await modoTestActivo(supabase);
+
   let enviados = 0;
   for (const s of sesiones ?? []) {
+    if (modoTest && !(await esTelefonoTest(supabase, s.telefono))) continue;
     await sendBotones(
       supabase,
       s.telefono,

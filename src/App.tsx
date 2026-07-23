@@ -15,8 +15,9 @@ import ContactList from './components/ContactList'
 import Conversation from './components/Conversation'
 import OffersList from './components/OffersList'
 import OfferDetail from './components/OfferDetail'
+import Settings from './components/Settings'
 
-type View = 'dashboard' | 'ofertas' | 'productores' | 'entidades' | 'mensajeria'
+type View = 'dashboard' | 'ofertas' | 'productores' | 'entidades' | 'mensajeria' | 'settings'
 type Registro = Record<string, unknown> & { id: string }
 
 const NAV: { id: View; labelKey: string }[] = [
@@ -25,6 +26,7 @@ const NAV: { id: View; labelKey: string }[] = [
   { id: 'productores', labelKey: 'nav.producers' },
   { id: 'entidades', labelKey: 'nav.entities' },
   { id: 'mensajeria', labelKey: 'nav.messaging' },
+  { id: 'settings', labelKey: 'nav.settings' },
 ]
 
 export default function App() {
@@ -196,6 +198,7 @@ export default function App() {
           {topbar}
           <div className={cn('mx-auto py-6', listaAncha ? 'w-[90%]' : 'max-w-6xl px-4')}>
             {view === 'dashboard' && <Dashboard />}
+            {view === 'settings' && <Settings />}
             {view === 'ofertas' &&
               (selectedOffer ? (
                 <OfferDetail excedente={selectedOffer} onBack={() => setSelectedOffer(null)} />

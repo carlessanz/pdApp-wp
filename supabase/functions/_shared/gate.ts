@@ -21,3 +21,15 @@ export async function esEmailTest(supabase: Cliente, email: string): Promise<boo
     .from("entidades").select("id").ilike("email", email).eq("es_test", true).limit(1);
   return (data ?? []).length > 0;
 }
+
+/**
+ * ¿Está activo el "modo test" global? (`app_settings.test_mode`, gestionado desde
+ * Configuración). Si lo está, la app SOLO envía a los usuarios `es_test`.
+ * **Fail-safe**: si falta la fila o hay error de lectura, devuelve `true` (se
+ * comporta como activo: NO se envía a no-test). Solo un `'false'` explícito lo apaga.
+ */
+export async function modoTestActivo(supabase: Cliente): Promise<boolean> {
+  const { data } = await supabase
+    .from("app_settings").select("value").eq("key", "test_mode").maybeSingle();
+  return data?.value !== "false";
+}

@@ -8,7 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import { sendText } from "../_shared/whatsapp.ts";
 import { leerRespuesta, procesarIntake } from "../_shared/intake.ts";
 import { procesarRespuestaOferta } from "../_shared/respuestas.ts";
-import { esTelefonoTest } from "../_shared/gate.ts";
+import { esTelefonoTest, modoTestActivo } from "../_shared/gate.ts";
 
 const encoder = new TextEncoder();
 
@@ -124,12 +124,13 @@ Deno.serve(async (req) => {
             .eq("phone", from);
           if (windowError) console.error("last_inbound_at update:", windowError.message);
 
-          // Gate "solo usuarios de prueba": el mensaje entrante queda registrado y
+          // Gate "modo test" (§8): si el modo test global (app_settings.test_mode)
+          // está activo —lo está por defecto—, el mensaje entrante queda registrado y
           // abre la ventana, pero NO respondemos (ALTA/BAJA, respuesta a oferta ni
-          // intake) si el número no es de un productor/entidad marcado es_test.
-          // Barrera de la app, independiente de la fase de Meta (§8). El mensaje se
-          // queda en la consola para que lo atienda una persona.
-          if (!(await esTelefonoTest(supabase, from))) continue;
+          // intake) salvo que el número sea de un productor/entidad marcado es_test.
+          // Con el modo test apagado se responde a todos. El mensaje se queda igual en
+          // la consola para que lo atienda una persona.
+          if ((await modoTestActivo(supabase)) && !(await esTelefonoTest(supabase, from))) continue;
 
           // Palabras clave de opt-in / opt-out. Ambas se confirman por mensaje:
           // estamos dentro de la ventana de servicio, así que es gratis y no

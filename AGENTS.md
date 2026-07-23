@@ -181,6 +181,7 @@ src/
     mensajes.ts                countUnanswered(): mensajes «sin contestar» por teléfono (§5)
     metaTest.ts                Lista de números de prueba de Meta (whitelist de envío, §9)
     emailTest.ts               Lista de correos de prueba (whitelist del canal email)
+    settings.ts                getTestMode()/setTestMode(): modo test global (app_settings, §8)
     email.ts                   enviarEmail(): llama a la Edge Function enviar-email
     i18n.tsx                   Sistema de traducciones (ca/es, per defecte ca; useT, §7)
     utils.ts                   cn() (shadcn)
@@ -196,6 +197,7 @@ src/
     RecordDetail.tsx           Ficha CRUD genérica (editar/crear/borrar) de productor o entidad
     ContactList.tsx            Sidebar de contactos + alta manual
     Conversation.tsx           Hilo de mensajes + composer + Realtime
+    Settings.tsx               Configuración: interruptor del modo test global + idioma (§8)
 scripts/
   import-ara.ts                Importación idempotente de los 5 CSV maestros
   crear-usuario.ts             Alta de cuentas por la Admin API (no envía correos)
@@ -209,7 +211,7 @@ supabase/
     _shared/oferta.ts          id_excedente + texto "OFERTA DISPONIBLE"
     _shared/priorizacion.ts    Puntuación de entidades (pura, sin red)
     _shared/respuestas.ts      Captura el sí/no de una entidad a una oferta (aceptación, §5)
-    _shared/gate.ts            Gate "solo usuarios de prueba" (es_test): esTelefonoTest/esEmailTest (§8)
+    _shared/gate.ts            Gate de envío: esTelefonoTest/esEmailTest + modoTestActivo (modo test global, §8)
     priorizar-entidades/       POST: ranking de entidades para un excedente (JWT)
     whatsapp-send/index.ts     POST: reglas de envío; delega en _shared
     whatsapp-webhook/index.ts  GET verificación / POST recepción; respuesta a oferta + intake
@@ -313,6 +315,13 @@ Clave/valor para secretos que un **job** necesita y que no pueden ir en git. Hoy
 `recordatorios_secret` (el que el job pasa a `intake-recordatorios`, §5). **Solo `service_role`**:
 RLS activa sin política y `revoke` explícito del `SELECT` que `authenticated` heredaría por
 default privileges (§9). La fila del secreto se inserta fuera de git con la service key.
+
+**`app_settings`** — `key` PK, `value`, `updated_at` (`20260723140000_app_settings.sql`).
+Clave/valor de **configuración no secreta** que gestiona el equipo desde **Configuración** (a
+diferencia de `app_config`, solo `service_role` para secretos). RLS: `authenticated`
+select/insert/update, y `service_role`. Hoy guarda **`test_mode`** (`'true'`/`'false'`, default
+`'true'`): el **modo test global** (§8). Lo leen las Edge Functions (`modoTestActivo`) y lo togglea
+`src/lib/settings.ts` desde la página Configuración.
 
 ### Integridad
 
@@ -489,8 +498,9 @@ que corresponde al momento de cierre y todavía no está implementado.
 ## 6ter. Distribución, cierre y panel
 
 Una vez creado el excedente, el técnico trabaja sobre él desde el **panel** (vistas
-Ofertas / Detalle). Navegación: barra superior de 5 secciones —**Dashboard | Ofertas |
-Productores | Entidades | Mensajería**— en `App.tsx`. El **Dashboard** (`Dashboard.tsx`) es la
+Ofertas / Detalle). Navegación: barra superior de 6 secciones —**Dashboard | Ofertas |
+Productores | Entidades | Mensajería | Configuració**— en `App.tsx`. **Configuració** (`Settings.tsx`)
+reúne el interruptor del **modo test** (§8) y el idioma. El **Dashboard** (`Dashboard.tsx`) es la
 landing tras el login: guía del proceso (los 4 momentos), KPIs agregados (ofertas por estado
 —incluidas `cancelada`—, kg canalizados/pendientes, productores/entidades y cuántos pueden
 recibir por estar en la lista Meta, mensajes recibidos/sin contestar, sesiones de intake) y el
@@ -631,14 +641,20 @@ llega a simularse):
 
 Contacto inexistente → `404 unknown_contact`. Sin sesión válida → `401 unauthorized`.
 
-**Gate "solo usuarios de prueba" (`es_test`)** — **fuente de verdad de la app** para permitir el
-envío, **independiente de la fase de Meta**. `es_test` (bool en `productores` y `entidades`,
-`20260723110000_es_test.sql`) marca quién puede recibir; se edita por ficha (CRUD) y decide los
-listados y los botones del panel. El gate vive en `_shared/gate.ts` (`esTelefonoTest`/`esEmailTest`)
-y se aplica en tres sitios: el **webhook** (no responde a quien no sea `es_test`), **whatsapp-send**
-y **enviar-email** (`403 no_test_user`). Cubre **todo**: ofertas, intake, recordatorios, ALTA/BAJA.
-Sobrevive al paso a producción de Meta: cuando `meta_test_recipients` se vacíe, `es_test` sigue
-filtrando. Se arrancó marcando `es_test=true` a quienes ya estaban en las whitelists.
+**Modo test global + gate `es_test`** — **fuente de verdad de la app** para permitir el envío,
+**independiente de la fase de Meta**. Un interruptor global, **`app_settings.test_mode`** (default
+`'true'`, editable desde **Configuración**, §6ter), decide si se aplica el gate: con el **modo test
+ACTIVADO** solo se envía a los usuarios `es_test`; **apagado**, a todos (producción). `es_test` (bool en
+`productores` y `entidades`, `20260723110000_es_test.sql`) marca quién puede recibir; se edita por ficha
+(CRUD) y decide los listados y los botones del panel. El gate vive en `_shared/gate.ts` (`modoTestActivo` más
+`esTelefonoTest`/`esEmailTest`) y se aplica en **cuatro** sitios: el **webhook** (no responde a quien
+no sea `es_test`), **whatsapp-send** y **enviar-email** (`403 no_test_user`) e **intake-recordatorios**
+(salta a los no-test). Cubre **todo**: ofertas, intake, recordatorios, ALTA/BAJA, por WhatsApp y correo.
+**Fail-safe**: si `test_mode` falta o no se puede leer, se trata como ACTIVADO (no se envía a no-test).
+Sobrevive al paso a producción de Meta: al vaciar `meta_test_recipients`, el modo test sigue filtrando.
+Se arrancó con `test_mode='true'` y `es_test=true` a quienes ya estaban en las whitelists. Hoy cualquier
+`authenticated` puede togglear `test_mode` (no hay roles todavía; §9/§12.2): apagarlo es sensible y la UI
+pide confirmación.
 
 **Gate de la lista de test de Meta** (segunda barrera, requisito técnico del entorno de test): si
 `meta_test_recipients` tiene alguna fila y el destinatario **no** está en ella →

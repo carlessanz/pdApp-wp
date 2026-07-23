@@ -10,7 +10,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { sendText, sendTemplate } from "../_shared/whatsapp.ts";
-import { esTelefonoTest } from "../_shared/gate.ts";
+import { esTelefonoTest, modoTestActivo } from "../_shared/gate.ts";
 
 // CORS restringido a los orígenes del panel; ya no '*'.
 // ALLOWED_ORIGIN admite varios separados por comas y '*' como comodín dentro de
@@ -104,11 +104,11 @@ Deno.serve(async (req) => {
       return responder({ error: "Falta 'template' para un mensaje de plantilla" }, 400);
     }
 
-    // Gate "solo usuarios de prueba" (es_test): fuente de verdad de la app para
-    // permitir el envío, independiente de la fase de Meta. Solo se envía a un
-    // número que sea de un productor o entidad marcado es_test (§8). La UI ya
-    // desactiva el botón; esto lo corta en el servidor aunque la UI fallara.
-    if (!(await esTelefonoTest(supabase, to))) {
+    // Gate "modo test" (§8): si el modo test global (app_settings.test_mode) está
+    // activo —lo está por defecto—, solo se envía a un número de un productor o
+    // entidad marcado es_test. Fuente de verdad de la app, independiente de Meta. La
+    // UI ya desactiva el botón; esto lo corta en el servidor aunque la UI fallara.
+    if ((await modoTestActivo(supabase)) && !(await esTelefonoTest(supabase, to))) {
       return responder(
         {
           error: `${to} no es un usuario de prueba (es_test). Solo se envía a las ` +
