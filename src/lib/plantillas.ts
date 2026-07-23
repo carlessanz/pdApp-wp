@@ -31,3 +31,18 @@ export function plantillaPrimerContacte(rol: RolContacte): PlantillaRef {
   if (!PLANTILLES_CA_APROVADES) return PLANTILLES.fallback
   return rol === 'entitat' ? PLANTILLES.entitat : PLANTILLES.productor
 }
+
+// Texto de la salutació en català (mismo contenido que las plantillas salutacio_*),
+// que pide responder OK. Se usa como TEXTO LIBRE cuando la ventana de 24 h ya está
+// abierta: así en pruebas se ve el mensaje real en català, sin depender de que Meta
+// apruebe la plantilla. Fuera de la ventana solo cabe la plantilla (plantillaPrimerContacte).
+export function textoSalutacio(rol: RolContacte): string {
+  if (rol === 'entitat') {
+    return "Hola! Som l'equip de POMA d'Espigoladors 🌱. Col·laborem amb entitats socials " +
+      'per aprofitar excedents agrícoles. Respon *OK* per activar la conversa i començar a ' +
+      'rebre les nostres ofertes. Gràcies!'
+  }
+  return "Hola! Som l'equip de POMA d'Espigoladors 🌱. T'ajudem a canalitzar els teus " +
+    'excedents agrícoles. Respon *OK* per activar la conversa i poder oferir-nos excedents ' +
+    'quan vulguis. Gràcies!'
+}

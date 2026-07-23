@@ -406,11 +406,14 @@ el email, que no tiene respuesta automática).
 `<br>`): así los saltos de línea se conservan al pegar en WhatsApp Web, correo o documentos, no
 solo en destinos que respetan el LF suelto.
 
-**Primer contacto por plantilla.** El botón «Enviar 1r missatge» de `Conversation` elige la
-plantilla por rol (`src/lib/plantillas.ts`, `plantillaPrimerContacte`): en producción,
-`salutacio_entitat` / `salutacio_productor` (català, piden responder «OK»); en test, mientras el
-flag `PLANTILLES_CA_APROVADES` sea `false`, siempre `hello_world` (la única aprobada). Contenido
-de las plantillas en `_shared/plantillas-meta.md` (§12).
+**Primer contacto / salutació.** El botón de `Conversation` hace dos cosas según la ventana de
+24 h: si está **abierta**, envía el **texto de salutació** en català con «respon OK» como texto
+libre (`textoSalutacio`, `src/lib/plantillas.ts`) —así en pruebas se ve el mensaje real sin
+depender de la aprobación de Meta—; si está **cerrada**, envía una **plantilla** por rol
+(`plantillaPrimerContacte`): en test siempre `hello_world` (la única aprobada, contenido fijo en
+inglés), en producción `salutacio_entitat`/`salutacio_productor` cuando `PLANTILLES_CA_APROVADES=true`.
+En la consola una plantilla se registra con su **texto legible** (`TEXTO_PLANTILLA` en
+`_shared/whatsapp.ts`), no con su nombre. Contenido de las plantillas en `_shared/plantillas-meta.md` (§12).
 
 **Cancelar / anular una oferta ya creada.** `OfferDetail` ofrece dos acciones de anulación:
 «Marcar como no colocada» (no se encontró destino, exige motivo) y «Cancelar oferta»

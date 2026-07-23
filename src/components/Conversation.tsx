@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { Lock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { sendWhatsApp } from '../lib/whatsapp'
-import { plantillaPrimerContacte } from '../lib/plantillas'
+import { plantillaPrimerContacte, textoSalutacio } from '../lib/plantillas'
 import type { RolContacte } from '../lib/plantillas'
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
@@ -102,29 +102,35 @@ export default function Conversation({ contact }: Props) {
     else setNotice(noticeFromError(result.data, t))
   }
 
+  const ventanaAbierta = contact.last_inbound_at != null &&
+    Date.now() - new Date(contact.last_inbound_at).getTime() < 24 * 60 * 60 * 1000
+
   async function handleSendTemplate() {
     if (sending) return
     setSending(true)
     setNotice(null)
-    // Rol del destinatario para elegir la plantilla catalana adecuada. La
-    // entidad tiene prioridad si el número es a la vez productor y entidad: el
-    // primer contacto manual suele ser para pedir aceptación de una oferta.
+    // Rol del destinatario para el texto/plantilla adecuados. La entidad tiene
+    // prioridad si el número es a la vez productor y entidad.
     const [ent, prod] = await Promise.all([
       supabase.from('entidades').select('id').eq('telefono', contact.phone).maybeSingle(),
       supabase.from('productores').select('id').eq('phone', contact.phone).maybeSingle(),
     ])
     const rol: RolContacte = ent.data ? 'entitat' : prod.data ? 'productor' : null
-    const plantilla = plantillaPrimerContacte(rol)
-    const result = await sendWhatsApp({
-      to: contact.phone, type: 'template',
-      template: plantilla.name, language: plantilla.language, components: [],
-    })
+    // Con la ventana de 24 h abierta se envía el texto de salutació directamente
+    // (en català, amb «respon OK») y se ve el mensaje real; fuera de la ventana
+    // solo cabe una plantilla aprobada por Meta (en test, hello_world).
+    let result
+    if (ventanaAbierta) {
+      result = await sendWhatsApp({ to: contact.phone, type: 'text', body: textoSalutacio(rol) })
+    } else {
+      const p = plantillaPrimerContacte(rol)
+      result = await sendWhatsApp({
+        to: contact.phone, type: 'template', template: p.name, language: p.language, components: [],
+      })
+    }
     setSending(false)
     if (!result.ok) setNotice(noticeFromError(result.data, t))
   }
-
-  const ventanaAbierta = contact.last_inbound_at != null &&
-    Date.now() - new Date(contact.last_inbound_at).getTime() < 24 * 60 * 60 * 1000
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-background">
@@ -178,7 +184,7 @@ export default function Conversation({ contact }: Props) {
           <TooltipTrigger asChild>
             <Button type="button" variant={ventanaAbierta ? 'outline' : 'default'}
               onClick={handleSendTemplate} disabled={sending}>
-              {ventanaAbierta ? t('msg.template') : t('msg.first_msg')}
+              {ventanaAbierta ? t('msg.greeting') : t('msg.first_msg')}
             </Button>
           </TooltipTrigger>
           <TooltipContent className="max-w-xs text-center">{t('msg.tooltip')}</TooltipContent>

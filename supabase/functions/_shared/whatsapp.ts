@@ -119,6 +119,13 @@ export async function sendText(
   return r;
 }
 
+// Texto legible de las plantillas para la CONSOLA (el destinatario recibe el
+// contenido real que renderiza Meta; aquí solo dejamos algo entendible en el hilo,
+// no el nombre "crudo" de la plantilla).
+const TEXTO_PLANTILLA: Record<string, string> = {
+  hello_world: "Hello world! (plantilla de Meta, només en anglès al número de prova)",
+};
+
 export async function sendTemplate(
   // deno-lint-ignore no-explicit-any
   supabase: any,
@@ -132,7 +139,8 @@ export async function sendTemplate(
     type: "template",
     template: { name: nombre, language: { code: idioma }, components },
   });
-  if (r.ok) await registrarSaliente(supabase, to, "template", nombre, r.waMessageId, r.data);
+  const bodyConsola = TEXTO_PLANTILLA[nombre] ?? `[plantilla: ${nombre}]`;
+  if (r.ok) await registrarSaliente(supabase, to, "template", bodyConsola, r.waMessageId, r.data);
   return r;
 }
 
