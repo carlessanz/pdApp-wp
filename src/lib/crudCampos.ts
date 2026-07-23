@@ -41,6 +41,7 @@ export const PRODUCTOR_CAMPOS: CampoDef[] = [
   { key: 'productos_habituales', label: 'f.productos_habituales', tipo: 'list', ancho: 'full' },
   { key: 'comentario', label: 'f.comentario', tipo: 'textarea', ancho: 'full' },
   { key: 'activo', label: 'f.activo', tipo: 'bool' },
+  { key: 'es_test', label: 'f.es_test', tipo: 'bool' },
 ]
 
 // entidades (ver src/types.ts). id y created_at no se editan.
@@ -75,4 +76,5 @@ export const ENTIDAD_CAMPOS: CampoDef[] = [
   { key: 'descarrega_toro_txt', label: 'f.descarrega_toro_txt' },
   { key: 'comentarios', label: 'f.comentarios', tipo: 'textarea', ancho: 'full' },
   { key: 'opt_in', label: 'f.opt_in', tipo: 'bool' },
+  { key: 'es_test', label: 'f.es_test', tipo: 'bool' },
 ]

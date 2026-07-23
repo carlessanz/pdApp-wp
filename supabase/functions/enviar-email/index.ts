@@ -8,6 +8,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { sendEmail } from "../_shared/resend.ts";
+import { esEmailTest } from "../_shared/gate.ts";
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGIN") ?? "http://localhost:5173")
   .split(",").map((o) => o.trim()).filter(Boolean);
@@ -69,6 +70,19 @@ Deno.serve(async (req) => {
     }
     if ((!html || typeof html !== "string") && (!text || typeof text !== "string")) {
       return responder({ error: "Falta 'html' o 'text'" }, 400);
+    }
+
+    // Gate "solo usuarios de prueba" (es_test): fuente de verdad de la app,
+    // independiente de la fase de Meta. Solo se envía al correo de una entidad
+    // marcada es_test (§8).
+    if (!(await esEmailTest(supabase, to))) {
+      return responder(
+        {
+          error: `${to} no es de una entidad de prueba (es_test).`,
+          code: "no_test_user",
+        },
+        403,
+      );
     }
 
     // Gate de la lista de test de email (misma lógica que meta_test_recipients).

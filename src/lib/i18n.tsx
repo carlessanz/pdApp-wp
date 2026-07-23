@@ -61,14 +61,14 @@ const ca: Dict = {
   'off.st_draft': 'Esborrany', 'off.st_cancelled': 'Cancel·lada', 'off.st_uncoll': 'No col·locada', 'off.st_closed': 'Tancada',
   // producers
   'prod.title': 'Productors',
-  'prod.subtitle': 'A dalt, els donats d’alta a Meta (poden rebre WhatsApp); a baix, la resta.',
+  'prod.subtitle': 'A dalt, els usuaris de prova (poden rebre missatges); a baix, la resta.',
   'prod.search': 'Cercar per nom, empresa, telèfon, població o correu…',
   'prod.empty': 'No hi ha productors.', 'prod.no_match': 'Cap productor coincideix amb la cerca.',
   'prod.grp_meta': 'Poden rebre (a Meta) · {n}', 'prod.grp_rest': 'No donats d’alta a Meta · {n}',
   'prod.c_name': 'Nom', 'prod.c_email': 'Correu', 'prod.c_phone': 'Telèfon', 'prod.c_actions': 'Accions',
   'prod.unanswered': '{n} sense contestar', 'prod.no_phone': 'Sense telèfon mòbil',
   // entities
-  'ent.title': 'Entitats receptores', 'ent.subtitle': 'La etiqueta «Meta» marca les que poden rebre missatges.',
+  'ent.title': 'Entitats receptores', 'ent.subtitle': 'A dalt, les entitats de prova (poden rebre missatges); a baix, la resta.',
   'ent.search': 'Cercar per nom, població, àrea, telèfon, correu o contacte…',
   'ent.empty': 'No hi ha entitats.', 'ent.no_match': 'Cap entitat coincideix amb la cerca.',
   'ent.c_name': 'Nom', 'ent.c_town': 'Població', 'ent.c_phone': 'Telèfon', 'ent.c_email': 'Correu',
@@ -99,6 +99,7 @@ const ca: Dict = {
   'od.no_send_wa': 'No s’ha pogut enviar per WhatsApp.', 'od.email_no_test': '{email} no és a la llista de correus de prova.',
   'od.no_send_email': 'No s’ha pogut enviar el correu.', 'od.no_optin': 'Sense opt-in', 'od.not_meta': 'No és a Meta',
   'od.no_email': 'Sense correu', 'od.email_not_test': 'El correu no és a la llista de prova',
+  'od.not_test': 'No és usuari de prova', 'od.not_test_toast': '{name} no és usuari de prova (es_test).',
   'od.responses': 'Respostes de les entitats',
   'od.resp_none': 'Encara no s’ha enviat cap oferta a cap entitat.',
   'od.rs_pendent': 'Pendent', 'od.rs_acceptada': 'Acceptada', 'od.rs_rebutjada': 'Rebutjada',
@@ -118,6 +119,7 @@ const ca: Dict = {
   'msg.this_contact': 'Aquest contacte',
   'msg.w_closed': 'Fora de la finestra de 24 hores: només es pot escriure text lliure després que el contacte hagi escrit.',
   'msg.w_optin': 'Aquest contacte no ha donat opt-in; no se li pot enviar una plantilla. Ho pot fer escrivint ALTA.',
+  'msg.w_no_test': 'Aquest contacte no és un usuari de prova (es_test); en fase de proves no se li pot enviar.',
   'msg.w_unknown': 'El contacte encara no existeix a la base de dades.',
   'msg.w_unauth': 'La teva sessió ha caducat o no tens permís. Torna a iniciar sessió.',
   // campos CRUD
@@ -135,6 +137,9 @@ const ca: Dict = {
   'f.transport_plataforma_txt': 'Transport (text original)', 'f.descarrega_toro': 'Descàrrega amb toro',
   'f.descarrega_toro_txt': 'Descàrrega (text original)', 'f.comentarios': 'Comentaris',
   'f.opt_in': 'Opt-in (consentiment)',
+  'f.es_test': 'Usuari de prova (rep WhatsApp/correu)',
+  // grups de llistat i etiqueta
+  'grp.test': 'Usuaris de prova · {n}', 'grp.rest': 'Resta · {n}', 'badge.test': 'Test',
 }
 
 // Español
@@ -186,13 +191,13 @@ const es: Dict = {
   'off.st_published': 'Publicada', 'off.st_partial': 'Parcial', 'off.st_blocked': 'Bloqueada',
   'off.st_draft': 'Borrador', 'off.st_cancelled': 'Cancelada', 'off.st_uncoll': 'No colocada', 'off.st_closed': 'Cerrada',
   'prod.title': 'Productores',
-  'prod.subtitle': 'Arriba, los dados de alta en Meta (pueden recibir WhatsApp); abajo, el resto.',
+  'prod.subtitle': 'Arriba, los usuarios de prueba (pueden recibir mensajes); abajo, el resto.',
   'prod.search': 'Buscar por nombre, empresa, teléfono, población o email…',
   'prod.empty': 'No hay productores.', 'prod.no_match': 'Ningún productor coincide con la búsqueda.',
   'prod.grp_meta': 'Pueden recibir (en Meta) · {n}', 'prod.grp_rest': 'No dados de alta en Meta · {n}',
   'prod.c_name': 'Nombre', 'prod.c_email': 'Email', 'prod.c_phone': 'Teléfono', 'prod.c_actions': 'Acciones',
   'prod.unanswered': '{n} sin contestar', 'prod.no_phone': 'Sin teléfono móvil',
-  'ent.title': 'Entidades receptoras', 'ent.subtitle': 'El badge «Meta» marca las que pueden recibir mensajes.',
+  'ent.title': 'Entidades receptoras', 'ent.subtitle': 'Arriba, las entidades de prueba (pueden recibir mensajes); abajo, el resto.',
   'ent.search': 'Buscar por nombre, población, área, teléfono, email o contacto…',
   'ent.empty': 'No hay entidades.', 'ent.no_match': 'Ninguna entidad coincide con la búsqueda.',
   'ent.c_name': 'Nombre', 'ent.c_town': 'Población', 'ent.c_phone': 'Teléfono', 'ent.c_email': 'Email',
@@ -221,6 +226,7 @@ const es: Dict = {
   'od.no_send_wa': 'No se pudo enviar por WhatsApp.', 'od.email_no_test': '{email} no está en la lista de correos de prueba.',
   'od.no_send_email': 'No se pudo enviar el email.', 'od.no_optin': 'Sin opt-in', 'od.not_meta': 'No está en Meta',
   'od.no_email': 'Sin email', 'od.email_not_test': 'El email no está en la lista de test',
+  'od.not_test': 'No es usuario de prueba', 'od.not_test_toast': '{name} no es usuario de prueba (es_test).',
   'od.responses': 'Respuestas de las entidades',
   'od.resp_none': 'Aún no se ha enviado ninguna oferta a ninguna entidad.',
   'od.rs_pendent': 'Pendiente', 'od.rs_acceptada': 'Aceptada', 'od.rs_rebutjada': 'Rechazada',
@@ -239,6 +245,7 @@ const es: Dict = {
   'msg.this_contact': 'Este contacto',
   'msg.w_closed': 'Fuera de la ventana de 24 horas: solo se puede escribir texto libre después de que el contacto haya escrito.',
   'msg.w_optin': 'Este contacto no ha dado opt-in; no se le puede enviar una plantilla. Puede darlo escribiendo ALTA.',
+  'msg.w_no_test': 'Este contacto no es un usuario de prueba (es_test); en fase de pruebas no se le puede enviar.',
   'msg.w_unknown': 'El contacto no existe todavía en la base de datos.',
   'msg.w_unauth': 'Tu sesión ha caducado o no tienes permiso. Vuelve a iniciar sesión.',
   'f.name': 'Nombre', 'f.empresa': 'Empresa', 'f.phone': 'Teléfono (E.164 sin +, 34…)',
@@ -255,6 +262,8 @@ const es: Dict = {
   'f.transport_plataforma_txt': 'Transporte (texto original)', 'f.descarrega_toro': 'Descarga con toro',
   'f.descarrega_toro_txt': 'Descarga (texto original)', 'f.comentarios': 'Comentarios',
   'f.opt_in': 'Opt-in (consentimiento)',
+  'f.es_test': 'Usuario de prueba (recibe WhatsApp/email)',
+  'grp.test': 'Usuarios de prueba · {n}', 'grp.rest': 'Resto · {n}', 'badge.test': 'Test',
 }
 
 const DICTS: Record<Lang, Dict> = { ca, es }

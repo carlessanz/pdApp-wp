@@ -33,6 +33,8 @@ export interface Productor {
   productos_habituales: string[] | null
   data_alta: string | null
   activo: boolean | null
+  /** Usuario de prueba: solo estos reciben WhatsApp/email (fuente de verdad, §8) */
+  es_test: boolean
 }
 
 export interface WaMessage {
@@ -91,6 +93,8 @@ export interface Entidad {
   descarrega_toro_txt: string | null
   data_alta: string | null
   opt_in: boolean | null
+  /** Usuario de prueba: solo estos reciben WhatsApp/email (fuente de verdad, §8) */
+  es_test: boolean
   created_at: string
 }
 

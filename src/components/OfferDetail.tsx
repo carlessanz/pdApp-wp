@@ -7,8 +7,6 @@ import { sendWhatsApp } from '../lib/whatsapp'
 import { enviarEmail } from '../lib/email'
 import { priorizarEntidades } from '../lib/poma'
 import type { EntidadPuntuada } from '../lib/poma'
-import { cargarNumerosTest } from '../lib/metaTest'
-import { cargarEmailsTest } from '../lib/emailTest'
 import { useT } from '../lib/i18n'
 import { textoRecollidaConfirmada, textoAlbaran } from '../lib/textos'
 import type { Canalizacion, Excedente, OfertaRespuesta } from '../types'
@@ -62,8 +60,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   const [ranking, setRanking] = useState<EntidadPuntuada[]>([])
   const [rankingError, setRankingError] = useState<string | null>(null)
   const [cargandoRanking, setCargandoRanking] = useState(true)
-  const [numerosTest, setNumerosTest] = useState<Set<string>>(new Set())
-  const [emailsTest, setEmailsTest] = useState<Set<string>>(new Set())
+  const [esTest, setEsTest] = useState<Set<string>>(new Set())
   const [emailPorEntidad, setEmailPorEntidad] = useState<Record<string, string | null>>({})
   const [copiado, setCopiado] = useState<string | null>(null)
 
@@ -142,12 +139,16 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   }, [excedente.id])
 
   useEffect(() => {
-    void cargarNumerosTest().then(setNumerosTest)
-    void cargarEmailsTest().then(setEmailsTest)
-    void supabase.from('entidades').select('id, email').then(({ data }) => {
+    // es_test es la fuente de verdad de "puede recibir" (WhatsApp y correo).
+    void supabase.from('entidades').select('id, email, es_test').then(({ data }) => {
       const map: Record<string, string | null> = {}
-      for (const e of data ?? []) map[e.id] = e.email
+      const tests = new Set<string>()
+      for (const e of data ?? []) {
+        map[e.id] = e.email
+        if (e.es_test) tests.add(e.id)
+      }
       setEmailPorEntidad(map)
+      setEsTest(tests)
     })
   }, [])
 
@@ -190,12 +191,13 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   }
 
   async function enviarOfertaWhatsApp(ent: EntidadPuntuada) {
-    if (!ent.telefono || !ent.opt_in || !numerosTest.has(ent.telefono)) return
+    if (!ent.telefono || !ent.opt_in || !esTest.has(ent.id)) return
     if (!exc.texto_oferta) { toast.error(t('od.no_text')); return }
     const r = await sendWhatsApp({ to: ent.telefono, type: 'text', body: exc.texto_oferta })
     if (r.ok) { await registrarEnvio(ent, 'whatsapp'); toast.success(t('od.sent_wa', { name: ent.nombre })); return }
     const data = r.data as { code?: string } | null
-    if (data?.code === 'no_test_recipient') toast.error(t('od.no_test_meta', { name: ent.nombre }))
+    if (data?.code === 'no_test_user') toast.error(t('od.not_test_toast', { name: ent.nombre }))
+    else if (data?.code === 'no_test_recipient') toast.error(t('od.no_test_meta', { name: ent.nombre }))
     else if (data?.code === 'unknown_contact') toast.error(t('od.must_write', { name: ent.nombre }))
     else if (data?.code === 'window_closed') toast.error(t('od.window_closed', { name: ent.nombre }))
     else toast.error(t('od.no_send_wa'))
@@ -203,7 +205,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
 
   async function enviarOfertaEmail(ent: EntidadPuntuada) {
     const email = emailPorEntidad[ent.id]
-    if (!email || !emailsTest.has(email.toLowerCase())) return
+    if (!email || !esTest.has(ent.id)) return
     if (!exc.texto_oferta) { toast.error(t('od.no_text')); return }
     const r = await enviarEmail({
       to: email, subject: `Oferta d'excedent: ${exc.producto ?? ''}`,
@@ -211,7 +213,8 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     })
     if (r.ok) { await registrarEnvio(ent, 'email'); toast.success(t('od.sent_email', { name: ent.nombre })); return }
     const data = r.data as { code?: string } | null
-    if (data?.code === 'no_test_recipient') toast.error(t('od.email_no_test', { email }))
+    if (data?.code === 'no_test_user') toast.error(t('od.not_test_toast', { name: ent.nombre }))
+    else if (data?.code === 'no_test_recipient') toast.error(t('od.email_no_test', { email }))
     else toast.error(t('od.no_send_email'))
   }
 
@@ -307,9 +310,8 @@ export default function OfferDetail({ excedente, onBack }: Props) {
           {cargandoRanking && <p className="text-sm text-muted-foreground">{t('od.calculating')}</p>}
           {rankingError && <p className="text-sm text-destructive">{rankingError}</p>}
           {!cargandoRanking && !rankingError && ranking.slice(0, 15).map((ent) => {
-            const enMeta = ent.telefono != null && numerosTest.has(ent.telefono)
+            const puedeTest = esTest.has(ent.id)
             const email = emailPorEntidad[ent.id]
-            const enEmail = email != null && emailsTest.has(email.toLowerCase())
             return (
               <div key={ent.id}
                 className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2.5 ${ent.pendiente ? 'bg-yellow-50 opacity-80' : ''}`}>
@@ -325,11 +327,11 @@ export default function OfferDetail({ excedente, onBack }: Props) {
                     <input type="checkbox" checked={ent.opt_in} onChange={() => void toggleOptIn(ent.id, ent.opt_in)} />
                     {t('od.optin')}
                   </label>
-                  <Button size="sm" disabled={!ent.opt_in || !enMeta}
-                    title={!ent.opt_in ? t('od.no_optin') : !enMeta ? t('od.not_meta') : undefined}
+                  <Button size="sm" disabled={!ent.opt_in || !ent.telefono || !puedeTest}
+                    title={!ent.opt_in ? t('od.no_optin') : !puedeTest ? t('od.not_test') : undefined}
                     onClick={() => void enviarOfertaWhatsApp(ent)}>{t('od.whatsapp')}</Button>
-                  <Button size="sm" variant="outline" disabled={!enEmail}
-                    title={!email ? t('od.no_email') : !enEmail ? t('od.email_not_test') : undefined}
+                  <Button size="sm" variant="outline" disabled={!email || !puedeTest}
+                    title={!email ? t('od.no_email') : !puedeTest ? t('od.not_test') : undefined}
                     onClick={() => void enviarOfertaEmail(ent)}>{t('od.email')}</Button>
                 </div>
               </div>

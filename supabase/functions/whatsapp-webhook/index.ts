@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import { sendText } from "../_shared/whatsapp.ts";
 import { leerRespuesta, procesarIntake } from "../_shared/intake.ts";
 import { procesarRespuestaOferta } from "../_shared/respuestas.ts";
+import { esTelefonoTest } from "../_shared/gate.ts";
 
 const encoder = new TextEncoder();
 
@@ -122,6 +123,13 @@ Deno.serve(async (req) => {
             .update({ last_inbound_at: new Date().toISOString() })
             .eq("phone", from);
           if (windowError) console.error("last_inbound_at update:", windowError.message);
+
+          // Gate "solo usuarios de prueba": el mensaje entrante queda registrado y
+          // abre la ventana, pero NO respondemos (ALTA/BAJA, respuesta a oferta ni
+          // intake) si el número no es de un productor/entidad marcado es_test.
+          // Barrera de la app, independiente de la fase de Meta (§8). El mensaje se
+          // queda en la consola para que lo atienda una persona.
+          if (!(await esTelefonoTest(supabase, from))) continue;
 
           // Palabras clave de opt-in / opt-out. Ambas se confirman por mensaje:
           // estamos dentro de la ventana de servicio, así que es gratis y no

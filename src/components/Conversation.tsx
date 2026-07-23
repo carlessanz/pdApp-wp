@@ -30,6 +30,7 @@ function noticeFromError(data: unknown, t: Tfn): Notice {
   switch (payload?.code) {
     case 'window_closed': return { kind: 'warning', text: t('msg.w_closed') }
     case 'no_opt_in': return { kind: 'warning', text: t('msg.w_optin') }
+    case 'no_test_user': return { kind: 'warning', text: t('msg.w_no_test') }
     case 'unknown_contact': return { kind: 'error', text: t('msg.w_unknown') }
     case 'unauthorized': return { kind: 'error', text: t('msg.w_unauth') }
   }

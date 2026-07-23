@@ -102,6 +102,7 @@ supabase/
     _shared/oferta.ts          id_excedente + texto "OFERTA DISPONIBLE"
     _shared/priorizacion.ts    Puntuación de entidades (pura, sin red)
     _shared/respuestas.ts      Captura el sí/no de una entidad a una oferta (aceptación, §5)
+    _shared/gate.ts            Gate "solo usuarios de prueba" (es_test): esTelefonoTest/esEmailTest (§8)
     priorizar-entidades/       POST: ranking de entidades para un excedente (JWT)
     whatsapp-send/index.ts     POST: reglas de envío; delega en _shared
     whatsapp-webhook/index.ts  GET verificación / POST recepción; respuesta a oferta + intake
@@ -134,7 +135,9 @@ los reintentos de Meta), `contact_phone`, `direction` (`inbound`/`outbound`), `t
 `tipo_empresa`, `telefono_alt`, `direccion`, `codigo_postal`, `nif`, `area_geografica`,
 `poblacion`, `productos_habituales text[]`, `data_alta`, `activo`.
 **`phone` es nullable**: 61 de los 339 productores importados no tienen móvil utilizable y
-aun así conservamos su ficha. La UI deshabilita el envío para ellos.
+aun así conservamos su ficha. La UI deshabilita el envío para ellos. Campo **`es_test`** (bool,
+default false, `20260723110000_es_test.sql`): marca de "usuario de prueba"; **solo estos reciben
+WhatsApp/correo** (fuente de verdad del envío, §8), editable por ficha.
 
 **`productor_ubicaciones`** — un productor puede tener varias: `alias`, `gmaps_url`,
 `coord_lat`, `coord_lng`, `municipio`, `es_principal`.
@@ -144,7 +147,9 @@ de capacidad (`productes_frescos`, `transport_plataforma`, `descarrega_toro`) vi
 texto libre: se guarda el original en `*_txt` y se deriva el boolean, que queda `null`
 cuando el texto no es concluyente (`"1 furgo"`, `"Transpalet"`, `"In situ"`). Ampliada con
 **`modalitat`** (`20260722160000_entidad_modalitat.sql`): modalitat d'aprofitament
-(Donació/Transformació/Venda/Maquila/Altres), editable con desplegable en el detalle (CRUD).
+(Donació/Transformació/Venda/Maquila/Altres), editable con desplegable en el detalle (CRUD). Y
+con **`es_test`** (bool, default false, `20260723110000_es_test.sql`): como en productores, marca
+de prueba que habilita el envío a la entidad (§8).
 
 **`excedentes`** — cabecera de la oferta. `id_excedente` UNIQUE con formato
 `E-AAMMDD-XXX-YYY-N`. `estado` ∈ `borrador` · `publicada` · `parcial` · `bloqueada` ·
@@ -235,7 +240,9 @@ Si Meta devuelve error, la función lo reenvía **tal cual** con su status HTTP.
 `X-Hub-Signature-256` (HMAC-SHA256 del cuerpo **crudo**, comparación en tiempo constante) →
 upsert del contacto → **upsert** del mensaje por `wa_message_id` → actualiza
 `last_inbound_at` → Realtime. Tras validar la firma **siempre responde 200**, para que Meta
-no reintente.
+no reintente. **Gate `es_test`**: el mensaje se registra y abre la ventana, pero solo se
+**responde** (ALTA/BAJA, respuesta a oferta, intake) si el número es de un productor/entidad
+marcado `es_test`; si no, se deja en la consola para una persona (§8).
 
 **Estados** — los `value.statuses` actualizan `wa_messages.status` casando por
 `wa_message_id`.
@@ -367,10 +374,9 @@ landing tras el login: guía del proceso (los 4 momentos), KPIs agregados (ofert
 —incluidas `cancelada`—, kg canalizados/pendientes, productores/entidades y cuántos pueden
 recibir por estar en la lista Meta, mensajes recibidos/sin contestar, sesiones de intake) y el
 **gestor de la lista de test de Meta**. `OffersList`, `ProducersList` y `EntitiesList` llevan
-**buscador**; `ProducersList` separa en dos grupos —primero los que están en la lista Meta
-(badge "Meta", pueden recibir), luego el resto— y `EntitiesList` marca con badge "Meta" las
-entidades que pueden recibir. Mensajería muestra la lista completa de contactos (ya no la
-conversación única).
+**buscador**; `ProducersList` **y** `EntitiesList` separan en dos grupos —primero los usuarios de
+prueba (`es_test`, badge "Test", pueden recibir), luego el resto—. Mensajería muestra la lista
+completa de contactos (ya no la conversación única).
 
 **CRUD de productores y entidades.** Cada listado tiene, por fila, «Detalle» y «Enviar
 mensaje», y en la cabecera «Nuevo/Nueva». «Detalle» abre `RecordDetail`, una ficha a pantalla
@@ -381,9 +387,9 @@ es **genérico**: recibe las definiciones de `src/lib/crudCampos.ts` (`PRODUCTOR
 mensaje» (en listado y ficha) asegura el teléfono como `wa_contact` y abre Mensajería, tanto
 para productores como para entidades.
 
-**Solo los números de la lista Meta pueden recibir.** En el detalle, **«Enviar oferta»** se
-habilita únicamente si la entidad tiene `opt_in` **y** su teléfono está en
-`meta_test_recipients`; el servidor lo vuelve a comprobar (§8). En el entorno de test ese botón
+**Solo los usuarios de prueba (`es_test`) pueden recibir.** En el detalle, **«Enviar oferta»**
+(WhatsApp o correo) se habilita únicamente si la entidad es `es_test` (y, para WhatsApp, tiene
+`opt_in`); el servidor lo vuelve a comprobar (§8). En el entorno de test ese botón
 envía el **texto de la oferta** (`texto_oferta`) como **texto dentro de la ventana de 24 h** —la
 abre la entidad al escribir al número— porque las plantillas propias (`oferta_excedent`) no son
 usables en el número de test (solo `hello_world`). En producción, con la plantilla aprobada, se
@@ -487,7 +493,16 @@ llega a simularse):
 
 Contacto inexistente → `404 unknown_contact`. Sin sesión válida → `401 unauthorized`.
 
-**Gate de la lista de test de Meta** (antes de las reglas de contacto): si
+**Gate "solo usuarios de prueba" (`es_test`)** — **fuente de verdad de la app** para permitir el
+envío, **independiente de la fase de Meta**. `es_test` (bool en `productores` y `entidades`,
+`20260723110000_es_test.sql`) marca quién puede recibir; se edita por ficha (CRUD) y decide los
+listados y los botones del panel. El gate vive en `_shared/gate.ts` (`esTelefonoTest`/`esEmailTest`)
+y se aplica en tres sitios: el **webhook** (no responde a quien no sea `es_test`), **whatsapp-send**
+y **enviar-email** (`403 no_test_user`). Cubre **todo**: ofertas, intake, recordatorios, ALTA/BAJA.
+Sobrevive al paso a producción de Meta: cuando `meta_test_recipients` se vacíe, `es_test` sigue
+filtrando. Se arrancó marcando `es_test=true` a quienes ya estaban en las whitelists.
+
+**Gate de la lista de test de Meta** (segunda barrera, requisito técnico del entorno de test): si
 `meta_test_recipients` tiene alguna fila y el destinatario **no** está en ella →
 `403 no_test_recipient`. Si la tabla está **vacía**, no restringe (§4). Es defensa en
 profundidad: la UI ya desactiva el botón, pero el servidor corta aunque la UI fallara. Es
@@ -695,6 +710,11 @@ POMA en producción real quedan pasos de configuración y negocio.
     separadas sin FK, un teléfono puede estar en ambas. El webhook lo desambigua por prioridad
     (§5), pero un productor-entidad a media intake que reciba una oferta y conteste sí/no en texto
     verá su respuesta tomada como aceptación, no como paso del intake.
+17. Coexisten dos gates: **`es_test`** (fuente de verdad de la app, §8) y las whitelists
+    `meta_test_recipients`/`email_test_recipients` (requisito técnico de Meta en test). En test un
+    destinatario debe cumplir **ambos**; se inicializaron alineados. El **Dashboard** aún gestiona
+    y mide por las listas de Meta (no por `es_test`): coherente hoy porque coinciden, a revisar al
+    pasar a producción de Meta o si se marca `es_test` a alguien fuera de la lista de Meta.
 
 ## 13. Al terminar cualquier cambio
 

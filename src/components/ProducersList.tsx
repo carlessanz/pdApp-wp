@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { cargarNumerosTest } from '../lib/metaTest'
 import { useT } from '../lib/i18n'
 import type { Productor } from '../types'
 import { Button } from '@/components/ui/button'
@@ -48,7 +47,6 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [unanswered, setUnanswered] = useState<Record<string, number>>({})
-  const [numerosTest, setNumerosTest] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState('')
 
   useEffect(() => {
@@ -62,8 +60,6 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
       })
     return () => { cancelled = true }
   }, [])
-
-  useEffect(() => { void cargarNumerosTest().then(setNumerosTest) }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -83,19 +79,19 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
     return () => { cancelled = true; void supabase.removeChannel(channel) }
   }, [])
 
-  const { enMeta, resto } = useMemo(() => {
+  const { test, resto } = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     const filtrados = producers.filter((p) => casa(p, q))
-    const enMeta: Productor[] = []
+    const test: Productor[] = []
     const resto: Productor[] = []
     for (const p of filtrados) {
-      if (p.phone && numerosTest.has(p.phone)) enMeta.push(p)
+      if (p.es_test) test.push(p)
       else resto.push(p)
     }
-    return { enMeta, resto }
-  }, [producers, numerosTest, busqueda])
+    return { test, resto }
+  }, [producers, busqueda])
 
-  function tabla(lista: Productor[], marcarMeta: boolean) {
+  function tabla(lista: Productor[], marcarTest: boolean) {
     return (
       <div className="overflow-x-auto">
         <Table>
@@ -115,7 +111,7 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
                   <TableCell className="font-medium">
                     <span className="flex flex-wrap items-center gap-2">
                       {p.name}
-                      {marcarMeta && <Badge variant="secondary">Meta</Badge>}
+                      {marcarTest && <Badge variant="secondary">{t('badge.test')}</Badge>}
                       {sinContestar > 0 && <Badge variant="destructive">{t('prod.unanswered', { n: sinContestar })}</Badge>}
                     </span>
                   </TableCell>
@@ -139,7 +135,7 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
     )
   }
 
-  const vacio = !loading && !error && enMeta.length === 0 && resto.length === 0
+  const vacio = !loading && !error && test.length === 0 && resto.length === 0
 
   return (
     <Card>
@@ -155,15 +151,15 @@ export default function ProducersList({ onSendMessage, onOpenDetail, onNew }: Pr
         {loading && <p className="text-sm text-muted-foreground">{t('c.loading')}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
         {vacio && <p className="text-sm text-muted-foreground">{producers.length === 0 ? t('prod.empty') : t('prod.no_match')}</p>}
-        {enMeta.length > 0 && (
+        {test.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-sm font-semibold">{t('prod.grp_meta', { n: enMeta.length })}</h3>
-            {tabla(enMeta, true)}
+            <h3 className="text-sm font-semibold">{t('grp.test', { n: test.length })}</h3>
+            {tabla(test, true)}
           </section>
         )}
         {resto.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-sm font-semibold text-muted-foreground">{t('prod.grp_rest', { n: resto.length })}</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground">{t('grp.rest', { n: resto.length })}</h3>
             {tabla(resto, false)}
           </section>
         )}
