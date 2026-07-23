@@ -100,18 +100,45 @@ export default function App() {
     if (v === 'entidades') cerrarEntidad()
   }
 
+  const langSwitcher = (
+    <div className="flex items-center gap-0.5 rounded-md border border-white/15 p-0.5">
+      {(['ca', 'es'] as Lang[]).map((l) => (
+        <button key={l} type="button" onClick={() => setLang(l)}
+          className={cn('rounded px-1.5 py-0.5 text-xs font-semibold uppercase transition-colors',
+            lang === l ? 'bg-secondary text-primary' : 'text-secondary/70 hover:text-secondary')}>
+          {l}
+        </button>
+      ))}
+    </div>
+  )
+  const logoutBtn = (
+    <button
+      type="button"
+      onClick={() => void supabase.auth.signOut()}
+      className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-secondary/80 hover:bg-white/10 hover:text-secondary"
+    >
+      <LogOut className="size-4" /> <span className="hidden sm:inline">{t('nav.logout')}</span>
+    </button>
+  )
   const topbar = (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-primary">
-      <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2.5">
-        <img src="/logo-poma.svg" alt="POMA" className="h-7 w-auto" />
-        <nav className="flex flex-1 flex-wrap gap-1">
+      <div className="mx-auto w-[90%] py-2 md:flex md:items-center md:gap-4 md:py-2.5">
+        {/* Móvil: logo + (idioma/salir) en la 1ª fila; nav debajo. Escritorio: todo en una fila. */}
+        <div className="flex items-center gap-3">
+          <img src="/logo-poma.svg" alt="POMA" className="h-7 w-auto shrink-0" />
+          <div className="ml-auto flex items-center gap-2 md:hidden">
+            {langSwitcher}
+            {logoutBtn}
+          </div>
+        </div>
+        <nav className="mt-2 flex gap-1 overflow-x-auto md:mt-0 md:flex-1 md:flex-wrap md:overflow-visible">
           {NAV.map((n) => (
             <button
               key={n.id}
               type="button"
               onClick={() => irA(n.id)}
               className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                'shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
                 view === n.id
                   ? 'bg-secondary text-primary'
                   : 'text-secondary/80 hover:bg-white/10 hover:text-secondary',
@@ -121,22 +148,10 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="flex items-center gap-0.5 rounded-md border border-white/15 p-0.5">
-          {(['ca', 'es'] as Lang[]).map((l) => (
-            <button key={l} type="button" onClick={() => setLang(l)}
-              className={cn('rounded px-1.5 py-0.5 text-xs font-semibold uppercase transition-colors',
-                lang === l ? 'bg-secondary text-primary' : 'text-secondary/70 hover:text-secondary')}>
-              {l}
-            </button>
-          ))}
+        <div className="hidden items-center gap-2 md:flex">
+          {langSwitcher}
+          {logoutBtn}
         </div>
-        <button
-          type="button"
-          onClick={() => void supabase.auth.signOut()}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-secondary/80 hover:bg-white/10 hover:text-secondary"
-        >
-          <LogOut className="size-4" /> {t('nav.logout')}
-        </button>
       </div>
     </header>
   )
@@ -144,24 +159,31 @@ export default function App() {
   return (
     <AuthGate>
       {view === 'mensajeria' ? (
-        <div className="flex h-screen flex-col">
+        <div className="flex h-dvh flex-col">
           {topbar}
           <div className="flex min-h-0 flex-1">
-            <ContactList
-              contacts={contacts}
-              loading={loadingContacts}
-              error={contactsError}
-              selectedPhone={selectedPhone}
-              onSelect={setSelectedPhone}
-              onReload={loadContacts}
-            />
-            {selected ? (
-              <Conversation key={selected.phone} contact={selected} />
-            ) : (
-              <main className="grid flex-1 place-items-center text-muted-foreground">
-                <p>{t('msg.select')}</p>
-              </main>
-            )}
+            {/* Lista: pantalla completa en móvil (oculta si hay conversación abierta);
+                columna fija a la izquierda en escritorio. */}
+            <div className={cn('min-h-0 w-full md:w-80 md:shrink-0', selected && 'hidden md:block')}>
+              <ContactList
+                contacts={contacts}
+                loading={loadingContacts}
+                error={contactsError}
+                selectedPhone={selectedPhone}
+                onSelect={setSelectedPhone}
+                onReload={loadContacts}
+              />
+            </div>
+            {/* Conversación: oculta en móvil sin selección; a pantalla completa al elegir contacto. */}
+            <div className={cn('min-h-0 min-w-0 flex-1', !selected && 'hidden md:flex')}>
+              {selected ? (
+                <Conversation key={selected.phone} contact={selected} onBack={() => setSelectedPhone(null)} />
+              ) : (
+                <main className="grid h-full w-full place-items-center text-muted-foreground">
+                  <p>{t('msg.select')}</p>
+                </main>
+              )}
+            </div>
           </div>
         </div>
       ) : (

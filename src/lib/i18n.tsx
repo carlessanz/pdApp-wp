@@ -107,6 +107,7 @@ const ca: Dict = {
   'od.rs_accept': 'Marcar acceptada', 'od.rs_reject': 'Marcar rebutjada',
   // messaging
   'msg.contacts': 'Contactes', 'msg.no_contacts': 'Encara no hi ha contactes.',
+  'msg.search_contact': 'Cerca contacte…', 'msg.no_match_contact': 'Cap contacte coincideix amb la cerca.',
   'msg.name_ph': 'Nom (opcional)', 'msg.save_contact': 'Desar contacte', 'msg.retry': 'Reintentar',
   'msg.phone_invalid': 'Telèfon no vàlid: E.164 sense +, p. ex. 34612345678',
   'msg.exists': 'Ja existeix un contacte amb aquest telèfon',
@@ -234,6 +235,7 @@ const es: Dict = {
   'od.ch_whatsapp': 'WhatsApp', 'od.ch_email': 'Email',
   'od.rs_accept': 'Marcar aceptada', 'od.rs_reject': 'Marcar rechazada',
   'msg.contacts': 'Contactos', 'msg.no_contacts': 'No hay contactos todavía.',
+  'msg.search_contact': 'Buscar contacto…', 'msg.no_match_contact': 'Ningún contacto coincide con la búsqueda.',
   'msg.name_ph': 'Nombre (opcional)', 'msg.save_contact': 'Guardar contacto', 'msg.retry': 'Reintentar',
   'msg.phone_invalid': 'Teléfono inválido: E.164 sin +, ej. 34612345678',
   'msg.exists': 'Ya existe un contacto con ese teléfono',

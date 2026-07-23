@@ -19,12 +19,13 @@ interface Props {
   onBack: () => void
 }
 
-// Escapa el texto para HTML y convierte los saltos de línea en <br> (para el
-// portapapeles: el <div> del clipboard no interpreta el LF suelto como salto).
-function textoAHtml(texto: string): string {
-  return texto
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>')
+// HTML para el portapapeles: cada línea en su propio <div> (el formato nativo de
+// los editores rich-text, incluido WhatsApp Web). Es más fiable que un único <div>
+// con <br>, que WhatsApp aplana al pegar perdiendo los saltos. Las líneas vacías
+// llevan <br> para no colapsarse.
+function textoAHtmlPortapapeles(texto: string): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return texto.split('\n').map((l) => `<div>${l === '' ? '<br>' : esc(l)}</div>`).join('')
 }
 
 function ofertaHtml(texto: string): string {
@@ -78,7 +79,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     // con <br>: algunos destinos (WhatsApp Web, correo, documentos) colapsan el
     // salto de línea suelto al pegar solo texto plano, y con la versión HTML lo
     // conservan. Si el navegador no soporta ClipboardItem, se cae a writeText.
-    const html = `<div style="white-space:pre-wrap">${textoAHtml(texto)}</div>`
+    const html = textoAHtmlPortapapeles(texto)
     try {
       if ('write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
         const item = new ClipboardItem({

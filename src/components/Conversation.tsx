@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Lock } from 'lucide-react'
+import { ArrowLeft, Lock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { sendWhatsApp } from '../lib/whatsapp'
 import { plantillaPrimerContacte, textoSalutacio } from '../lib/plantillas'
@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 interface Props {
   contact: WaContact
+  onBack?: () => void
 }
 
 interface Notice {
@@ -53,7 +54,7 @@ function formatTime(iso: string): string {
   return `${date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })} ${time}`
 }
 
-export default function Conversation({ contact }: Props) {
+export default function Conversation({ contact, onBack }: Props) {
   const { t } = useT()
   const [messages, setMessages] = useState<WaMessage[]>([])
   const [loading, setLoading] = useState(true)
@@ -134,9 +135,15 @@ export default function Conversation({ contact }: Props) {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-background">
-      <header className="flex items-center justify-between border-b bg-card px-5 py-3">
-        <div>
-          <h2 className="font-semibold">{contact.name ?? contact.phone}</h2>
+      <header className="flex items-center gap-2 border-b bg-card px-4 py-3 md:px-5">
+        {onBack && (
+          <button type="button" onClick={onBack} aria-label={t('c.back')}
+            className="-ml-1 rounded-md p-1 text-muted-foreground hover:bg-muted md:hidden">
+            <ArrowLeft className="size-5" />
+          </button>
+        )}
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate font-semibold">{contact.name ?? contact.phone}</h2>
           {contact.name && <span className="text-xs text-muted-foreground">{contact.phone}</span>}
         </div>
         <Badge variant={contact.opt_in ? 'default' : 'secondary'}>
@@ -179,7 +186,7 @@ export default function Conversation({ contact }: Props) {
         </div>
       )}
 
-      <footer className="flex items-center gap-2 border-t bg-card px-5 py-3">
+      <footer className="flex flex-wrap items-center gap-2 border-t bg-card px-3 py-2.5 md:px-5 md:py-3">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button type="button" variant={ventanaAbierta ? 'outline' : 'default'}
@@ -189,8 +196,8 @@ export default function Conversation({ contact }: Props) {
           </TooltipTrigger>
           <TooltipContent className="max-w-xs text-center">{t('msg.tooltip')}</TooltipContent>
         </Tooltip>
-        <form className="flex flex-1 gap-2" onSubmit={handleSendText}>
-          <Input placeholder={ventanaAbierta ? t('msg.write_ph') : t('msg.start_first_ph')}
+        <form className="flex min-w-0 flex-1 basis-full gap-2 md:basis-auto" onSubmit={handleSendText}>
+          <Input className="min-w-0" placeholder={ventanaAbierta ? t('msg.write_ph') : t('msg.start_first_ph')}
             value={draft} onChange={(e) => setDraft(e.target.value)} disabled={sending || !ventanaAbierta} />
           <Button type="submit" disabled={sending || !draft.trim() || !ventanaAbierta}>
             {sending ? t('c.sending') : t('c.send')}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -26,6 +26,17 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
   const [phone, setPhone] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [busqueda, setBusqueda] = useState('')
+
+  // Filtro por nombre o teléfono (sobre lo ya cargado).
+  const filtrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase()
+    if (!q) return contacts
+    const qDigits = q.replace(/\D/g, '')
+    return contacts.filter((c) =>
+      (c.name ?? '').toLowerCase().includes(q) ||
+      (qDigits !== '' && c.phone.includes(qDigits)))
+  }, [contacts, busqueda])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -49,13 +60,19 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
   }
 
   return (
-    <aside className="flex w-80 flex-shrink-0 flex-col border-r bg-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <h1 className="font-semibold">{t('msg.contacts')}</h1>
-        <Button size="sm" variant={showForm ? 'outline' : 'default'}
-          onClick={() => { setShowForm((v) => !v); setFormError(null) }}>
-          {showForm ? t('c.cancel') : <><Plus className="size-4" /> {t('c.add')}</>}
-        </Button>
+    <aside className="flex h-full w-full flex-col border-r bg-card">
+      <div className="border-b">
+        <div className="flex items-center justify-between px-4 py-3">
+          <h1 className="font-semibold">{t('msg.contacts')}</h1>
+          <Button size="sm" variant={showForm ? 'outline' : 'default'}
+            onClick={() => { setShowForm((v) => !v); setFormError(null) }}>
+            {showForm ? t('c.cancel') : <><Plus className="size-4" /> {t('c.add')}</>}
+          </Button>
+        </div>
+        <div className="px-3 pb-3">
+          <Input type="search" placeholder={t('msg.search_contact')} value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)} className="h-8" />
+        </div>
       </div>
 
       {showForm && (
@@ -77,16 +94,17 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
         {!loading && !error && contacts.length === 0 && (
           <p className="p-4 text-sm text-muted-foreground">{t('msg.no_contacts')}</p>
         )}
-        {contacts.map((c) => (
+        {!loading && !error && contacts.length > 0 && filtrados.length === 0 && (
+          <p className="p-4 text-sm text-muted-foreground">{t('msg.no_match_contact')}</p>
+        )}
+        {filtrados.map((c) => (
           <button key={c.id} type="button" onClick={() => onSelect(c.phone)}
-            className={cn('flex w-full items-center gap-3 border-b px-4 py-3 text-left hover:bg-muted/50',
+            className={cn('flex w-full items-center gap-2.5 border-b px-3 py-1.5 text-left hover:bg-muted/50',
               c.phone === selectedPhone && 'bg-secondary/40')}>
-            <span className={cn('size-2.5 flex-shrink-0 rounded-full', c.opt_in ? 'bg-green-500' : 'bg-gray-400')}
+            <span className={cn('size-2 flex-shrink-0 rounded-full', c.opt_in ? 'bg-green-500' : 'bg-gray-400')}
               title={c.opt_in ? t('msg.optin') : t('msg.no_consent')} />
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate font-medium">{c.name ?? c.phone}</span>
-              {c.name && <span className="text-xs text-muted-foreground">{c.phone}</span>}
-            </span>
+            <span className="truncate text-sm font-medium">{c.name ?? c.phone}</span>
+            {c.name && <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">{c.phone}</span>}
           </button>
         ))}
       </div>

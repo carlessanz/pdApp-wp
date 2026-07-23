@@ -57,6 +57,14 @@ en `src/index.css` (navy `#234C66` / crema `#E0EBC7` / coral `#EE7A5F`, fuente S
 alias `@/` → `src/`. Iconos `lucide-react`, toasts `sonner`, `cn()` en `src/lib/utils.ts`. El
 logo (`public/logo-poma.svg`) y el favicon están en `public/`.
 
+**Responsive** (breakpoint `md`, 768px). El **header** ocupa el 90% del ancho y en móvil se parte
+en dos filas (logo + idioma/salir arriba, nav con scroll horizontal debajo). Los **listados** van
+en tabla con `overflow-x-auto` (scroll horizontal en móvil); los **detalles/CRUD** usan grids
+`sm:grid-cols-2`. La **mensajería** usa patrón **lista↔conversación**: en móvil la lista ocupa toda
+la pantalla y, al elegir un contacto, la conversación pasa a pantalla completa con botón «atrás»
+(`Conversation` recibe `onBack`); en escritorio conviven las dos columnas. La vista de mensajería
+usa `h-dvh` para que el composer no quede bajo la barra del navegador móvil.
+
 ## 3. Estructura
 
 ```text
@@ -376,7 +384,8 @@ recibir por estar en la lista Meta, mensajes recibidos/sin contestar, sesiones d
 **gestor de la lista de test de Meta**. `OffersList`, `ProducersList` y `EntitiesList` llevan
 **buscador**; `ProducersList` **y** `EntitiesList` separan en dos grupos —primero los usuarios de
 prueba (`es_test`, badge "Test", pueden recibir), luego el resto—. Mensajería muestra la lista
-completa de contactos (ya no la conversación única).
+completa de contactos (ya no la conversación única), con **buscador** bajo el título «Contactes» y
+filas compactas (nombre y teléfono en una línea) para reducir el scroll; layout responsive (§2).
 
 **CRUD de productores y entidades.** Cada listado tiene, por fila, «Detalle» y «Enviar
 mensaje», y en la cabecera «Nuevo/Nueva». «Detalle» abre `RecordDetail`, una ficha a pantalla
@@ -402,9 +411,12 @@ fila `pendent` en `oferta_respuestas`. La entidad que responde por WhatsApp la a
 con badge de estado. El técnico puede **marcar a mano** acceptada/rebutjada (imprescindible para
 el email, que no tiene respuesta automática).
 
-**Copiar el texto de la oferta** escribe al portapapeles `text/plain` **y** `text/html` (con
-`<br>`): así los saltos de línea se conservan al pegar en WhatsApp Web, correo o documentos, no
-solo en destinos que respetan el LF suelto.
+**Copiar el texto de la oferta** escribe al portapapeles `text/plain` (con `\n`) **y** `text/html`
+con **cada línea en su propio `<div>`** (`textoAHtmlPortapapeles`): así los saltos se conservan al
+pegar en WhatsApp, correo o documentos. Un único `<div>` con `<br>` no basta: WhatsApp lo aplana al
+pegar. **Ojo**: el composer del chat (`Conversation`) es un `<input>` de una línea; pegar ahí un
+texto multilínea pierde los saltos (para enviar una oferta con formato, usar «Enviar oferta» en el
+detalle, que no pasa por el composer).
 
 **Primer contacto / salutació.** El botón de `Conversation` hace dos cosas según la ventana de
 24 h: si está **abierta**, envía el **texto de salutació** en català con «respon OK» como texto
