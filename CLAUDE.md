@@ -8,6 +8,25 @@ canónico, que se importa aquí:
 
 @AGENTS.md
 
+## Visión funcional del producto
+
+**POMA** es un **servicio** de la Fundació Espigoladors apoyado por tecnología, que actúa como
+**ERP del servicio**: canaliza excedentes agrícolas por cinco líneas —donación social (core),
+salida comercial, transformación por maquila, espigueo y diagnóstico/prevención— con un equipo de
+dinamización que opera de forma **asistida** en nombre de las organizaciones. Lo construido hoy es
+un **subconjunto** de esa visión (Fase 1 WhatsApp + POMA núcleo: intake, priorización, canalización
+y cierre básico); falta el grueso del modelo objetivo (organización multirol, convenios, demandas,
+conciliación real, certificados, back office con roles, diagnóstico/planes).
+
+- **Versión reducida + correspondencia objetivo↔construido:** `AGENTS.md §1bis` (se importa arriba;
+  es la fuente mantenida de este resumen).
+- **Funcional completo adaptado** (con estado de implementación por sección): `docs/Documento
+  funcional POMA 2026 — adaptado.md`.
+- **Funcional original** (visión de negocio íntegra): `docs/Documento funcional POMA 2026.md`.
+
+Ambos documentos de `docs/` están **fuera de git** (§7). Para el detalle de negocio mandan esos
+funcionales; para el **estado real construido**, manda `AGENTS.md`.
+
 ## Regla permanente
 
 **Cada modificación debe dejar `AGENTS.md` al día en el mismo cambio.** Al importarse

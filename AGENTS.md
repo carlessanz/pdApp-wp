@@ -37,7 +37,105 @@ La especificación completa está en `docs/nuevas-funcionalidades/` (fuera de gi
 `poma-automatizacion-canalizacion-whatsapp-final.md` manda en el proceso de canalización y
 trae los prompts 0–8; `manual-whatsapp-cloud-api-supabase-final.md` manda en la
 configuración de Meta y las decisiones D1–D7; `guia-tecnica-claude-code-whatsapp-final.md`
-es el mapa de ejecución.
+es el mapa de ejecución. El **funcional de negocio** (visión objetivo del servicio, más amplia
+que lo construido) vive en `docs/Documento funcional POMA 2026.md` y su **versión adaptada al
+estado real** en `docs/Documento funcional POMA 2026 — adaptado.md` (ambos fuera de git); su
+resumen y la correspondencia objetivo↔construido están en **§1bis**.
+
+## 1bis. Visión funcional POMA 2026 (modelo objetivo ↔ lo construido)
+
+Resumen del **funcional de negocio** (el *to-be*, `docs/Documento funcional POMA 2026.md`) y su
+reconciliación con lo que hay en el repo (el *as-is*, que describe el **resto** de este documento). El
+detalle vive en `docs/Documento funcional POMA 2026 — adaptado.md` (fuera de git). **Regla:** cuando
+cambie el alcance funcional o el estado de implementación, mantener al día esta §1bis y su tabla.
+
+**Qué es POMA.** Un **servicio** de la Fundació Espigoladors apoyado por tecnología (un dinamizador de
+referencia + red de actores + plataforma como **ERP del servicio**, fuente única sin duplicidades). En
+la fase inicial la operativa es **asistida**: el equipo opera en nombre de las organizaciones. Ocho
+principios: servicio apoyado por tecnología; modelo asistido; ERP fuente única; pagos fuera / valor
+dentro; Espigoladors es parte del intercambio (receptora y donante en donaciones); **multirol real**;
+trazabilidad e indicadores; preparado para evolucionar.
+
+**Cinco líneas de servicio:** (1) canalización social/donación —core—, (2) salida comercial, (3)
+transformación por maquila, (4) espigueo, (5) diagnóstico y prevención.
+
+**Actores/roles (multirol):** generador, receptor social, receptor comercial, obrador, Fundació
+Espigoladors (operador legal del intercambio) y equipo interno (dinamizador, técnico, Super Admin).
+
+**Flujo core E2E:** registrar (usuario o asistido) → back office **confirma** → publicar → **match
+asistido** (propone el sistema, decide el dinamizador) → coordinar recogida → borradores documentales
+→ **conciliación** (previsto/documento/recepción real) → documentación definitiva y **certificados**.
+
+**Estados objetivo:** excedente NUEVO→PENDIENTE→DISPONIBLE→EN GESTIÓN→CERRADO (cierre por destino);
+demanda; organización (alta→convenio→verificada; y diagnóstico); match
+(propuesto→validado→coordinado→conciliado); albarán (borrador→emitido→entregado→conciliado).
+
+**Albaranes y conciliación:** un albarán por entrega física; en donaciones **doble tramo**
+(donante→Espigoladors y Espigoladors→entidad); numeración de serie sin huecos (ALB/ALR); kilos
+oficiales solo desde operaciones **conciliadas**; **ningún certificado antes de conciliar**. Certificado
+de **donación** (al donante, lo emite Espigoladors) y de **transacción** (al generador).
+
+**Comunicación (§14 del funcional):** módulo WhatsApp (Cloud API) + email por preferencia de canal,
+notificaciones automáticas, captura estructurada y encuestas. **Lo construido (Fase 1) implementa y
+excede** esta visión en la captura conversacional (ver §5, §6bis, §8): intake, opt-in, gates,
+recordatorios. Pendiente: tabla de notificaciones con *fallback* de canal, adjuntos descargados,
+encuestas.
+
+**Diagnóstico y planes de prevención:** servicio técnico (plan básico/personalizado) con plan
+**activo** alimentado por el histórico. ⬜ No construido.
+
+**Modelo de datos objetivo:** base única compartida (POMA + back office + CRM); `organizacion`
+(multirol) y `usuario` como cosas distintas; Espigoladors dentro del modelo; `historial_estado` para
+trazabilidad total; JSON flexible y catálogos parametrizables. Entidades: organizacion, usuario,
+rol_organizacion, convenio, excedente, demanda, interes, sugerencia_match, operacion, entrega,
+albaran(+linea), documento_externo, documento/certificados, conversacion/mensaje/adjunto,
+plantilla_mensaje, notificacion, encuesta_satisfaccion, diagnostico/plan/plan_revision,
+derivacion_espigueo, historial_estado, webhook_log y catálogos.
+
+**Indicadores comprometidos (medir desde dentro):** +40 % de organizaciones en 24 meses (base 14),
+≥50 t/año intercambiadas, −5/−10 % de pérdidas, ≥5 funcionalidades nuevas, satisfacción 60–80 %.
+
+**Correspondencia objetivo↔construido** (✅ construido · 🟡 parcial · ⬜ pendiente):
+
+| Objetivo (funcional) | Hoy (repo) | Estado |
+| --- | --- | --- |
+| `organizacion` multirol única | `productores` + `entidades` (2 tablas, sin multirol; doble rol por teléfono + prioridad del webhook) | 🟡 |
+| `usuario` de organización | — (solo cuentas del equipo, `AuthGate`) | ⬜ |
+| `rol_organizacion` | — (rol implícito por tabla) | ⬜ |
+| `convenio` de colaboración | — | ⬜ |
+| `excedente` | `excedentes` | ✅ |
+| `demanda` | — | ⬜ |
+| `interes` (solicitud de receptor) | `oferta_respuestas` (aceptación sí/no) | 🟡 |
+| `sugerencia_match` persistida | `priorizar-entidades` (Edge Function pura, no persiste) | 🟡 |
+| `operacion`/`entrega` (lotes; kg prev/recib/valid) | `canalizaciones` (por entidad; `kg_confirmados`/`kg_reales`) | 🟡 |
+| `albaran`/`albaran_linea` (serie, estados, QR) | texto *placeholder* (`src/lib/textos.ts`) | ⬜ |
+| `documento_externo` | — | ⬜ |
+| `documento` / **certificados** | — | ⬜ |
+| `conversacion`/`mensaje`/`adjunto` | `wa_contacts`/`wa_messages` (sin adjuntos) | 🟡 |
+| `plantilla_mensaje` (tabla) | plantillas en código (`plantillas-meta.md`, `plantillas.ts`) | 🟡 |
+| `notificacion` (+ *fallback* de canal) | — (envíos directos) | ⬜ |
+| `encuesta_satisfaccion` | — | ⬜ |
+| `diagnostico`/`plan_prevencion`/`plan_revision` | — | ⬜ |
+| `derivacion_espigueo` | — | ⬜ |
+| `historial_estado` | — | ⬜ |
+| `webhook_log` | `wa_messages.raw` (jsonb) | 🟡 |
+| catálogos (categorías/unidades/motivos/destinos) | `productos`/`causas`/`factores_conversion` | 🟡 |
+| back office, cola de **aprobaciones**, Super Admin | — (cualquier `authenticated` publica/edita) | ⬜ |
+| **roles y permisos** | — (sin roles; deuda §12.2) | ⬜ |
+| parte pública / catálogo público | — (todo tras `AuthGate`) | ⬜ |
+| **modelo asistido** | de facto: el equipo opera todo desde el panel | 🟡 |
+| multiidioma `ca`/`es` | i18n propio (`src/lib/i18n.tsx`) | ✅ |
+| móvil primero / responsive | responsive `md`, mensajería lista↔conversación | ✅ |
+| módulo de comunicación WhatsApp | Fase 1 + intake/opt-in/gates/recordatorios | ✅/excede |
+| valor económico | `valor_eur = kg × eur_kg` (plano 1 €/kg) | 🟡 |
+| vistas/indicadores (`v_kpi_subvencion`…) | `Dashboard` agrega en cliente | 🟡 |
+
+**Brechas mayores pendientes** (orden aproximado de dependencia): (1) **roles y permisos** → (2)
+organización unificada multirol + `usuario` → (3) **back office** con aprobaciones/convenios/
+verificación → (4) onboarding + convenio → (5) demandas → (6) albaranes/conciliación real →
+**certificados** → (7) notificaciones + encuestas → (8) adjuntos de WhatsApp → (9) diagnóstico/planes
+→ (10) espigueo, parte pública, calendario y mapa → (11) vistas SQL + `historial_estado`. La más
+urgente, porque desbloquea el resto, es el **modelo de roles**.
 
 ## 2. Stack
 
@@ -475,9 +573,11 @@ con `disponible_hasta` vencida >24 h y kg sin cubrir. No actúa hasta que el pan
   (no passen per i18n). Identificadors en inglés salvo los del dominio (`productores`, `entidades`,
   `excedentes`, `canalizaciones`).
 - **Secretos**: nunca en el código. Env vars, siempre.
-- **`docs/` y `scripts/data/` nunca entran en git.** El primero es material de trabajo; el
-  segundo son datos personales (teléfonos, emails y NIF de ~450 personas y entidades).
-  `.env.local.example` sí se versiona: es la plantilla, sin valores.
+- **`docs/` y `scripts/data/` nunca entran en git.** El primero es material de trabajo —incluye el
+  **funcional de negocio** (`Documento funcional POMA 2026.md` y `Documento funcional POMA 2026 —
+  adaptado.md`, resumidos en §1bis) y `nuevas-funcionalidades/`—; el segundo son datos personales
+  (teléfonos, emails y NIF de ~450 personas y entidades). `.env.local.example` sí se versiona: es la
+  plantilla, sin valores.
 - **Claves de Supabase**: usar las **nuevas** — `sb_publishable_...` en el frontend,
   `sb_secret_...` en el servidor. **No** usar las obsoletas `anon`/`service_role` (claves JWT
   antiguas). Los *roles* de Postgres `anon`/`authenticated`/`service_role` sí se siguen usando
@@ -743,5 +843,6 @@ POMA en producción real quedan pasos de configuración y negocio.
 
 1. `npm run build` en verde.
 2. **Actualizar este fichero** si cambió arquitectura, datos, contratos, convenciones,
-   comandos o deuda técnica.
+   comandos o deuda técnica; y **§1bis + su tabla de correspondencia** si cambió el alcance
+   funcional o el estado de implementación (✅/🟡/⬜).
 3. Commit en castellano, describiendo el *qué* y el *por qué*.
