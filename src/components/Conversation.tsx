@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import { ArrowLeft, Lock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { sendWhatsApp } from '../lib/whatsapp'
@@ -9,7 +9,7 @@ import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
 import type { WaContact, WaMessage } from '../types'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -91,16 +91,30 @@ export default function Conversation({ contact, onBack }: Props) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-  async function handleSendText(e: FormEvent) {
-    e.preventDefault()
+  async function enviarTexto() {
+    // trim quita espacios/saltos sobrantes al principio y final, pero conserva los
+    // saltos internos: al pegar una oferta multilínea se envía con su formato.
     const body = draft.trim()
-    if (!body || sending) return
+    if (!body || sending || !ventanaAbierta) return
     setSending(true)
     setNotice(null)
     const result = await sendWhatsApp({ to: contact.phone, type: 'text', body })
     setSending(false)
     if (result.ok) setDraft('')
     else setNotice(noticeFromError(result.data, t))
+  }
+
+  function handleSubmitText(e: FormEvent) {
+    e.preventDefault()
+    void enviarTexto()
+  }
+
+  function handleTextareaKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    // Enter envía; Shift+Enter (o Alt+Enter) inserta un salto de línea, como en WhatsApp.
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      void enviarTexto()
+    }
   }
 
   const ventanaAbierta = contact.last_inbound_at != null &&
@@ -196,9 +210,16 @@ export default function Conversation({ contact, onBack }: Props) {
           </TooltipTrigger>
           <TooltipContent className="max-w-xs text-center">{t('msg.tooltip')}</TooltipContent>
         </Tooltip>
-        <form className="flex min-w-0 flex-1 basis-full gap-2 md:basis-auto" onSubmit={handleSendText}>
-          <Input className="min-w-0" placeholder={ventanaAbierta ? t('msg.write_ph') : t('msg.start_first_ph')}
-            value={draft} onChange={(e) => setDraft(e.target.value)} disabled={sending || !ventanaAbierta} />
+        <form className="flex min-w-0 flex-1 basis-full items-end gap-2 md:basis-auto" onSubmit={handleSubmitText}>
+          <Textarea
+            rows={1}
+            className="max-h-40 min-h-10 min-w-0 resize-none py-2"
+            placeholder={ventanaAbierta ? t('msg.write_ph') : t('msg.start_first_ph')}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleTextareaKeyDown}
+            disabled={sending || !ventanaAbierta}
+          />
           <Button type="submit" disabled={sending || !draft.trim() || !ventanaAbierta}>
             {sending ? t('c.sending') : t('c.send')}
           </Button>

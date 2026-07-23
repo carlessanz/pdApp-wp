@@ -414,9 +414,9 @@ el email, que no tiene respuesta automática).
 **Copiar el texto de la oferta** escribe al portapapeles `text/plain` (con `\n`) **y** `text/html`
 con **cada línea en su propio `<div>`** (`textoAHtmlPortapapeles`): así los saltos se conservan al
 pegar en WhatsApp, correo o documentos. Un único `<div>` con `<br>` no basta: WhatsApp lo aplana al
-pegar. **Ojo**: el composer del chat (`Conversation`) es un `<input>` de una línea; pegar ahí un
-texto multilínea pierde los saltos (para enviar una oferta con formato, usar «Enviar oferta» en el
-detalle, que no pasa por el composer).
+pegar. El **composer del chat** (`Conversation`) es un `<textarea>` multilínea (`field-sizing`
+crece con el contenido): conserva los saltos al pegar; **Enter envía**, **Shift/Alt+Enter** inserta
+salto de línea.
 
 **Primer contacto / salutació.** El botón de `Conversation` hace dos cosas según la ventana de
 24 h: si está **abierta**, envía el **texto de salutació** en català con «respon OK» como texto
