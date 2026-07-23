@@ -1,12 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
+import { countUnanswered } from '../lib/mensajes'
+import type { MessageRow } from '../lib/mensajes'
 import type { WaContact } from '../types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 
 interface Props {
   contacts: WaContact[]
@@ -27,16 +30,40 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
+  const [unanswered, setUnanswered] = useState<Record<string, number>>({})
 
-  // Filtro por nombre o teléfono (sobre lo ya cargado).
+  // Carga los mensajes para contar los "sin contestar" por contacto y se suscribe a
+  // Realtime, de modo que la lista se reordena en cuanto llega un mensaje nuevo.
+  useEffect(() => {
+    let cancelled = false
+    let rows: MessageRow[] = []
+    supabase.from('wa_messages').select('contact_phone, direction, created_at')
+      .then(({ data, error: loadError }) => {
+        if (cancelled) return
+        if (loadError) { console.error('wa_messages select:', loadError.message); return }
+        rows = (data as MessageRow[]) ?? []
+        setUnanswered(countUnanswered(rows))
+      })
+    const channel = supabase
+      .channel('wa-messages-contactos')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' },
+        (payload) => { rows = [...rows, payload.new as MessageRow]; setUnanswered(countUnanswered(rows)) })
+      .subscribe()
+    return () => { cancelled = true; void supabase.removeChannel(channel) }
+  }, [])
+
+  // Filtro por nombre o teléfono; luego se ordena poniendo primero los contactos con
+  // mensajes sin contestar (más pendientes arriba), conservando el resto del orden.
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
-    if (!q) return contacts
     const qDigits = q.replace(/\D/g, '')
-    return contacts.filter((c) =>
-      (c.name ?? '').toLowerCase().includes(q) ||
-      (qDigits !== '' && c.phone.includes(qDigits)))
-  }, [contacts, busqueda])
+    const base = q
+      ? contacts.filter((c) =>
+          (c.name ?? '').toLowerCase().includes(q) ||
+          (qDigits !== '' && c.phone.includes(qDigits)))
+      : contacts
+    return [...base].sort((a, b) => (unanswered[b.phone] ?? 0) - (unanswered[a.phone] ?? 0))
+  }, [contacts, busqueda, unanswered])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -84,7 +111,7 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
         </form>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {loading && <p className="p-4 text-sm text-muted-foreground">{t('c.loading')}</p>}
         {error && (
           <div className="p-4 text-sm text-destructive">
@@ -97,16 +124,24 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
         {!loading && !error && contacts.length > 0 && filtrados.length === 0 && (
           <p className="p-4 text-sm text-muted-foreground">{t('msg.no_match_contact')}</p>
         )}
-        {filtrados.map((c) => (
-          <button key={c.id} type="button" onClick={() => onSelect(c.phone)}
-            className={cn('flex w-full items-center gap-2.5 border-b px-3 py-1.5 text-left hover:bg-muted/50',
-              c.phone === selectedPhone && 'bg-secondary/40')}>
-            <span className={cn('size-2 flex-shrink-0 rounded-full', c.opt_in ? 'bg-green-500' : 'bg-gray-400')}
-              title={c.opt_in ? t('msg.optin') : t('msg.no_consent')} />
-            <span className="truncate text-sm font-medium">{c.name ?? c.phone}</span>
-            {c.name && <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">{c.phone}</span>}
-          </button>
-        ))}
+        {filtrados.map((c) => {
+          const pendientes = unanswered[c.phone] ?? 0
+          return (
+            <button key={c.id} type="button" onClick={() => onSelect(c.phone)}
+              className={cn('flex w-full items-center gap-2.5 border-b px-3 py-1.5 text-left hover:bg-muted/50',
+                c.phone === selectedPhone && 'bg-secondary/40')}>
+              <span className={cn('size-2 shrink-0 rounded-full', c.opt_in ? 'bg-green-500' : 'bg-gray-400')}
+                title={c.opt_in ? t('msg.optin') : t('msg.no_consent')} />
+              <span className="truncate text-sm font-medium">{c.name ?? c.phone}</span>
+              {pendientes > 0 ? (
+                <Badge variant="destructive" className="ml-auto shrink-0 px-1.5"
+                  title={t('msg.unanswered', { n: pendientes })}>{pendientes}</Badge>
+              ) : (
+                c.name && <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">{c.phone}</span>
+              )}
+            </button>
+          )
+        })}
       </div>
     </aside>
   )

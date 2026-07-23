@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
-import { ArrowLeft, Lock } from 'lucide-react'
+import { ArrowLeft, Lock, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '../lib/supabase'
 import { sendWhatsApp } from '../lib/whatsapp'
 import { plantillaPrimerContacte, textoSalutacio } from '../lib/plantillas'
@@ -16,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 interface Props {
   contact: WaContact
   onBack?: () => void
+  onDeleted?: () => void
 }
 
 interface Notice {
@@ -54,7 +56,7 @@ function formatTime(iso: string): string {
   return `${date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })} ${time}`
 }
 
-export default function Conversation({ contact, onBack }: Props) {
+export default function Conversation({ contact, onBack, onDeleted }: Props) {
   const { t } = useT()
   const [messages, setMessages] = useState<WaMessage[]>([])
   const [loading, setLoading] = useState(true)
@@ -117,6 +119,19 @@ export default function Conversation({ contact, onBack }: Props) {
     }
   }
 
+  // Borra el hilo entero de la consola: todos los mensajes del contacto y su ficha
+  // de wa_contacts. Si el contacto vuelve a escribir, el webhook lo recrea.
+  async function borrarHilo() {
+    if (!onDeleted) return
+    if (!window.confirm(t('msg.confirm_delete_thread', { name: contact.name ?? contact.phone }))) return
+    const { error: msgError } = await supabase.from('wa_messages').delete().eq('contact_phone', contact.phone)
+    if (msgError) { setNotice({ kind: 'error', text: msgError.message }); return }
+    const { error: contactError } = await supabase.from('wa_contacts').delete().eq('phone', contact.phone)
+    if (contactError) { setNotice({ kind: 'error', text: contactError.message }); return }
+    toast.success(t('msg.thread_deleted'))
+    onDeleted()
+  }
+
   const ventanaAbierta = contact.last_inbound_at != null &&
     Date.now() - new Date(contact.last_inbound_at).getTime() < 24 * 60 * 60 * 1000
 
@@ -163,9 +178,16 @@ export default function Conversation({ contact, onBack }: Props) {
         <Badge variant={contact.opt_in ? 'default' : 'secondary'}>
           {contact.opt_in ? t('msg.optin') : t('msg.no_consent')}
         </Badge>
+        {onDeleted && (
+          <button type="button" onClick={() => void borrarHilo()}
+            aria-label={t('msg.delete_thread')} title={t('msg.delete_thread')}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+            <Trash2 className="size-4" />
+          </button>
+        )}
       </header>
 
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-5">
         {loading && <p className="text-sm text-muted-foreground">{t('msg.loading')}</p>}
         {loadError && <p className="text-sm text-destructive">{loadError}</p>}
         {!loading && !loadError && messages.length === 0 && (

@@ -122,7 +122,7 @@ export default function App() {
   )
   const topbar = (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-primary">
-      <div className="mx-auto w-[90%] py-2 md:flex md:items-center md:gap-4 md:py-2.5">
+      <div className="mx-auto w-[98%] py-2 md:flex md:items-center md:gap-4 md:py-2.5">
         {/* Móvil: logo + (idioma/salir) en la 1ª fila; nav debajo. Escritorio: todo en una fila. */}
         <div className="flex items-center gap-3">
           <img src="/logo-poma.svg" alt="POMA" className="h-7 w-auto shrink-0" />
@@ -161,10 +161,10 @@ export default function App() {
       {view === 'mensajeria' ? (
         <div className="flex h-dvh flex-col">
           {topbar}
-          <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 overflow-hidden">
             {/* Lista: pantalla completa en móvil (oculta si hay conversación abierta);
-                columna fija a la izquierda en escritorio. */}
-            <div className={cn('min-h-0 w-full md:w-80 md:shrink-0', selected && 'hidden md:block')}>
+                columna fija a la izquierda en escritorio, con scroll interno propio. */}
+            <div className={cn('flex min-h-0 w-full flex-col overflow-hidden md:w-80 md:shrink-0', selected && 'hidden md:flex')}>
               <ContactList
                 contacts={contacts}
                 loading={loadingContacts}
@@ -175,9 +175,14 @@ export default function App() {
               />
             </div>
             {/* Conversación: oculta en móvil sin selección; a pantalla completa al elegir contacto. */}
-            <div className={cn('min-h-0 min-w-0 flex-1', !selected && 'hidden md:flex')}>
+            <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', !selected && 'hidden md:flex')}>
               {selected ? (
-                <Conversation key={selected.phone} contact={selected} onBack={() => setSelectedPhone(null)} />
+                <Conversation
+                  key={selected.phone}
+                  contact={selected}
+                  onBack={() => setSelectedPhone(null)}
+                  onDeleted={() => { setSelectedPhone(null); void loadContacts() }}
+                />
               ) : (
                 <main className="grid h-full w-full place-items-center text-muted-foreground">
                   <p>{t('msg.select')}</p>

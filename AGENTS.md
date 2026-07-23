@@ -80,6 +80,7 @@ src/
     whatsapp.ts                sendWhatsApp(): llama a la Edge Function; nunca lanza
     plantillas.ts              plantillaPrimerContacte(): tría plantilla de 1r contacte per rol (§6ter)
     poma.ts                    priorizarEntidades(): llama a la Edge Function con el JWT
+    mensajes.ts                countUnanswered(): mensajes «sin contestar» por teléfono (§5)
     metaTest.ts                Lista de números de prueba de Meta (whitelist de envío, §9)
     emailTest.ts               Lista de correos de prueba (whitelist del canal email)
     email.ts                   enviarEmail(): llama a la Edge Function enviar-email
@@ -220,9 +221,11 @@ Las tablas POMA sí tienen foreign keys. Las de mensajería **no**: `productores
 `wa_contacts`; `INSERT`/`DELETE` en `meta_test_recipients` (whitelist gestionada desde el
 Dashboard); **`INSERT`/`UPDATE`/`DELETE` en `productores` y `entidades`** (CRUD del panel,
 `20260722140000_crud_productores_entidades.sql`); **`INSERT`/`UPDATE`/`DELETE` en
-`oferta_respuestas`** (el panel registra el envío y marca a mano; §6ter). `anon` **no tiene
-ningún privilegio** desde `20260721160000_auth_authenticated.sql`. Sin `INSERT` en `wa_messages`
-para nadie salvo el servidor: el envío pasa siempre por la Edge Function. `app_config` es **solo
+`oferta_respuestas`** (el panel registra el envío y marca a mano; §6ter); **`DELETE` en
+`wa_messages` y `wa_contacts`** (borrar hilos de conversación desde el panel,
+`20260723120000_borrar_conversaciones.sql`). `anon` **no tiene ningún privilegio** desde
+`20260721160000_auth_authenticated.sql`. Sin `INSERT` en `wa_messages` para nadie salvo el
+servidor: el envío pasa siempre por la Edge Function. `app_config` es **solo
 `service_role`** (§9). Realtime en `wa_contacts`, `wa_messages`, `excedentes`, `canalizaciones`
 y `oferta_respuestas`.
 
@@ -284,8 +287,9 @@ compartido (cabecera `x-recordatorios-secret`) que vive en `app_config` (lo lee 
 secreto `RECORDATORIOS_SECRET` (lo valida la función). Si el productor pulsa **Continuar** se
 reanuda el paso; **Cancel·lar** (o la palabra **`Stop`**) borra la sesión. Detalle en §6bis.
 
-**"Sin contestar"** — `countUnanswered()` en `ProducersList`: mensajes `inbound` posteriores
-al último `outbound` de ese teléfono.
+**"Sin contestar"** — `countUnanswered()` (`src/lib/mensajes.ts`, compartido): mensajes `inbound`
+posteriores al último `outbound` de ese teléfono. Lo usan `ProducersList` (badge) y `ContactList`
+(ordena los contactos con pendientes arriba y muestra el contador).
 
 ## 6. Importación de datos maestros
 
@@ -384,8 +388,12 @@ recibir por estar en la lista Meta, mensajes recibidos/sin contestar, sesiones d
 **gestor de la lista de test de Meta**. `OffersList`, `ProducersList` y `EntitiesList` llevan
 **buscador**; `ProducersList` **y** `EntitiesList` separan en dos grupos —primero los usuarios de
 prueba (`es_test`, badge "Test", pueden recibir), luego el resto—. Mensajería muestra la lista
-completa de contactos (ya no la conversación única), con **buscador** bajo el título «Contactes» y
-filas compactas (nombre y teléfono en una línea) para reducir el scroll; layout responsive (§2).
+completa de contactos (ya no la conversación única), con **buscador** bajo el título «Contactes»,
+filas compactas (nombre y teléfono en una línea) y **orden por pendientes** (los contactos con
+mensajes sin contestar arriba, con contador). La columna de contactos queda **fija** con scroll
+interno propio (no scrollea la página). Desde la cabecera de la conversación se puede **borrar el
+hilo entero** (papelera): elimina los `wa_messages` del contacto y su `wa_contact` (si vuelve a
+escribir, el webhook lo recrea; §4). Layout responsive (§2).
 
 **CRUD de productores y entidades.** Cada listado tiene, por fila, «Detalle» y «Enviar
 mensaje», y en la cabecera «Nuevo/Nueva». «Detalle» abre `RecordDetail`, una ficha a pantalla
@@ -701,8 +709,8 @@ POMA en producción real quedan pasos de configuración y negocio.
    pregunta pero la sesión ya avanzó, y su siguiente mensaje se lee como respuesta al paso nuevo.
 4. `disponible_hasta` se guarda `null` (el productor responde en texto libre); el técnico lo
    normaliza en el panel, y hasta que lo haga el job de vencidas no actúa sobre ese excedente.
-5. `ProducersList` carga **todos** los `wa_messages` sin filtro ni paginación para contar los
-   no contestados, y se suscribe a Realtime sin filtro. No escala. Igual `OffersList`, que
+5. `ProducersList` **y `ContactList`** cargan **todos** los `wa_messages` sin filtro ni paginación
+   para contar los no contestados, y se suscriben a Realtime sin filtro. No escala. Igual `OffersList`, que
    recarga entero ante cualquier cambio de Realtime, y el `Dashboard`, que al entrar agrega
    toda la base (productores, entidades, excedentes, canalizaciones, mensajes) en el cliente.
    Los buscadores de `ProducersList`/`OffersList` filtran **en cliente** sobre lo ya cargado.
