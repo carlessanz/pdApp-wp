@@ -70,6 +70,7 @@ src/
   lib/
     supabase.ts                Cliente Supabase (lanza si faltan las env vars)
     whatsapp.ts                sendWhatsApp(): llama a la Edge Function; nunca lanza
+    plantillas.ts              plantillaPrimerContacte(): tría plantilla de 1r contacte per rol (§6ter)
     poma.ts                    priorizarEntidades(): llama a la Edge Function con el JWT
     metaTest.ts                Lista de números de prueba de Meta (whitelist de envío, §9)
     emailTest.ts               Lista de correos de prueba (whitelist del canal email)
@@ -100,9 +101,10 @@ supabase/
     _shared/intake.ts          Motor conversacional (máquina de estados)
     _shared/oferta.ts          id_excedente + texto "OFERTA DISPONIBLE"
     _shared/priorizacion.ts    Puntuación de entidades (pura, sin red)
+    _shared/respuestas.ts      Captura el sí/no de una entidad a una oferta (aceptación, §5)
     priorizar-entidades/       POST: ranking de entidades para un excedente (JWT)
     whatsapp-send/index.ts     POST: reglas de envío; delega en _shared
-    whatsapp-webhook/index.ts  GET verificación / POST recepción; engancha el intake
+    whatsapp-webhook/index.ts  GET verificación / POST recepción; respuesta a oferta + intake
     intake-recordatorios/      POST: avisa intakes a medias (lo llama pg_cron vía pg_net)
     enviar-email/index.ts      POST: ofertas por email (JWT + gate email_test_recipients)
     recuperar-password/index.ts POST público: genera enlace de reset y lo manda por Resend
@@ -152,6 +154,14 @@ cuando el texto no es concluyente (`"1 furgo"`, `"Transpalet"`, `"In situ"`). Am
 **`canalizaciones`** — detalle por entidad: `kg_confirmados`, `kg_reales`, cajas, albaranes,
 firmas. Relación **`excedentes` 1—N `canalizaciones`** (una oferta, varias entidades).
 
+**`oferta_respuestas`** — flujo de **aceptación** (`20260723100000_oferta_respuestas.sql`):
+`excedente_id` (FK, `on delete cascade`), `entidad_id` (FK, `on delete set null`), `telefono`,
+`canal` (`whatsapp`·`email`), `estado` (`pendent`·`acceptada`·`rebutjada`), `mensaje_respuesta`,
+`enviado_at`, `respondido_at`. `unique (excedente_id, entidad_id)` (reenviar actualiza, no
+duplica) e índice `(telefono, estado)`. Es **distinta de `canalizaciones`**: aquella registra
+kg; esta, el sí/no de la entidad. Al enviar una oferta desde `OfferDetail` se deja aquí una fila
+`pendent`; la respuesta por WhatsApp la actualiza el webhook (§5). Realtime activo.
+
 **`intake_sessions`** — estado del flujo conversacional: `telefono`, `paso_actual`,
 `datos_parciales jsonb`, `excedente_id` (sin uso), `updated_at` y
 **`recordatorio_enviado_at`** (marca del aviso de 10 min; `guardar()` la vuelve a `null` en
@@ -196,10 +206,12 @@ Las tablas POMA sí tienen foreign keys. Las de mensajería **no**: `productores
 `SELECT` en todas y, además, escritura donde el panel la necesita: `INSERT`/`UPDATE` en
 `wa_contacts`; `INSERT`/`DELETE` en `meta_test_recipients` (whitelist gestionada desde el
 Dashboard); **`INSERT`/`UPDATE`/`DELETE` en `productores` y `entidades`** (CRUD del panel,
-`20260722140000_crud_productores_entidades.sql`). `anon` **no tiene ningún privilegio** desde
-`20260721160000_auth_authenticated.sql`. Sin `INSERT` en `wa_messages` para nadie salvo el
-servidor: el envío pasa siempre por la Edge Function. `app_config` es **solo `service_role`**
-(§9). Realtime en `wa_contacts`, `wa_messages`, `excedentes` y `canalizaciones`.
+`20260722140000_crud_productores_entidades.sql`); **`INSERT`/`UPDATE`/`DELETE` en
+`oferta_respuestas`** (el panel registra el envío y marca a mano; §6ter). `anon` **no tiene
+ningún privilegio** desde `20260721160000_auth_authenticated.sql`. Sin `INSERT` en `wa_messages`
+para nadie salvo el servidor: el envío pasa siempre por la Edge Function. `app_config` es **solo
+`service_role`** (§9). Realtime en `wa_contacts`, `wa_messages`, `excedentes`, `canalizaciones`
+y `oferta_respuestas`.
 
 **Las políticas RLS por sí solas no bastan.** Supabase ya no expone automáticamente las
 tablas nuevas del esquema `public` a los roles de la Data API
@@ -231,6 +243,16 @@ no reintente.
 **Palabras clave** — `BAJA` pone `opt_in=false` + `opt_out_at`; `ALTA` pone `opt_in=true` +
 `opt_in_at`. **Ambas responden confirmación** por WhatsApp (estamos en ventana, es gratis) y
 se registran como `outbound`.
+
+**Respuesta de una entidad a una oferta (aceptación)** — `procesarRespuestaOferta()`
+(`_shared/respuestas.ts`), enganchada en el webhook **antes del intake y con prioridad sobre él**.
+Solo actúa sobre **texto plano** (los pasos con botones del intake son `interactive` y no se tocan)
+que clasifique claramente como sí/no. Si lo es, busca la fila `pendent` de `oferta_respuestas` más
+reciente para ese teléfono (**la última oferta enviada**), la pasa a `acceptada`/`rebutjada`,
+guarda el texto y **responde confirmación** por WhatsApp. **Resuelve el doble rol**: un número que
+es productor **y** entidad, si tiene una oferta pendiente y contesta sí/no, se atiende aquí; con
+cualquier otro mensaje cae al intake como productor. Si no hay fila pendiente o el texto no es
+sí/no, devuelve `false` y sigue el flujo normal.
 
 **Intake conversacional** — un productor escribe → el webhook lo identifica por `phone` en
 `productores` → `procesarIntake()` (`_shared/intake.ts`). El estado vive en
@@ -367,6 +389,22 @@ abre la entidad al escribir al número— porque las plantillas propias (`oferta
 usables en el número de test (solo `hello_world`). En producción, con la plantilla aprobada, se
 volvería a enviar como plantilla. Si la entidad no ha escrito aún, el envío responde
 `409 window_closed`/`404 unknown_contact` y se le pide que escriba primero.
+
+**Aceptación de la oferta (panel).** Cada envío desde `OfferDetail` (WhatsApp o email) deja una
+fila `pendent` en `oferta_respuestas`. La entidad que responde por WhatsApp la actualiza sola
+(§5) y el detalle lo refleja **en vivo** (Realtime) en la tarjeta «Respostes de les entitats»,
+con badge de estado. El técnico puede **marcar a mano** acceptada/rebutjada (imprescindible para
+el email, que no tiene respuesta automática).
+
+**Copiar el texto de la oferta** escribe al portapapeles `text/plain` **y** `text/html` (con
+`<br>`): así los saltos de línea se conservan al pegar en WhatsApp Web, correo o documentos, no
+solo en destinos que respetan el LF suelto.
+
+**Primer contacto por plantilla.** El botón «Enviar 1r missatge» de `Conversation` elige la
+plantilla por rol (`src/lib/plantillas.ts`, `plantillaPrimerContacte`): en producción,
+`salutacio_entitat` / `salutacio_productor` (català, piden responder «OK»); en test, mientras el
+flag `PLANTILLES_CA_APROVADES` sea `false`, siempre `hello_world` (la única aprobada). Contenido
+de las plantillas en `_shared/plantillas-meta.md` (§12).
 
 **Cancelar / anular una oferta ya creada.** `OfferDetail` ofrece dos acciones de anulación:
 «Marcar como no colocada» (no se encontró destino, exige motivo) y «Cancelar oferta»
@@ -608,9 +646,12 @@ POMA en producción real quedan pasos de configuración y negocio.
 
 1. ~~**Salir del modo PoC**~~ — **hecho (2026-07-22)**: `WHATSAPP_ENVIO_REAL=true` en remoto. Lo
    que contiene el riesgo ahora es el entorno de test de Meta (≤5 números) + `meta_test_recipients`.
-2. **Plantillas propias en Meta**: `oferta_excedent` y `confirmacio_productor` hay que darlas
-   de alta y esperar su aprobación. En test solo `hello_world` está aprobada, así que el envío
-   real de la oferta no funciona hasta entonces.
+2. **Plantillas propias en Meta**: `oferta_excedent`, `confirmacio_productor` y las de primer
+   contacto **`salutacio_productor` / `salutacio_entitat`** (català, piden responder «OK») hay que
+   darlas de alta y esperar su aprobación (contenido en `_shared/plantillas-meta.md`). En test solo
+   `hello_world` está aprobada, así que ni el envío real de la oferta ni las salutacions catalanes
+   funcionan hasta entonces; el código ya las selecciona por rol tras el flag
+   `PLANTILLES_CA_APROVADES` de `src/lib/plantillas.ts` (hoy `false` → se usa `hello_world`).
 3. **Opt-in real de las entidades**: hoy `false` en las 111; el toggle deja la mecánica, pero
    recoger el consentimiento es trabajo de negocio.
 4. **Formato definitivo del albarán**: se genera con placeholders (`src/lib/textos.ts`); el
@@ -643,6 +684,17 @@ POMA en producción real quedan pasos de configuración y negocio.
 10. Hay migraciones que **borran datos** (`truncate wa_messages`) mezcladas con DDL.
 11. Sin FK entre `productores`, `wa_contacts` y `wa_messages` (unidas por `phone`).
 12. `prioritat` casi no discrimina (97 de 111 entidades son prioridad 1): aporta poco al ranking.
+13. `oferta_respuestas` se registra desde el **cliente** (`OfferDetail`), no desde `whatsapp-send`:
+    mantiene la Edge Function intacta pero acopla el registro al panel. Las respuestas por **email**
+    no tienen captura automática (no hay inbound de correo): se marcan a mano.
+14. La clasificación sí/no de `procesarRespuestaOferta` es una **heurística por lista de palabras**:
+    un texto corto que empiece por «sí/no» con una oferta pendiente podría clasificarse mal.
+15. La selección de plantilla de primer contacto por rol **no se ejercita en test** (siempre cae a
+    `hello_world`); solo actúa en producción con `PLANTILLES_CA_APROVADES=true`.
+16. **Doble rol** productor+entidad (p. ej. Sebas Sale, Carles Sanz, altas de prueba): tablas
+    separadas sin FK, un teléfono puede estar en ambas. El webhook lo desambigua por prioridad
+    (§5), pero un productor-entidad a media intake que reciba una oferta y conteste sí/no en texto
+    verá su respuesta tomada como aceptación, no como paso del intake.
 
 ## 13. Al terminar cualquier cambio
 

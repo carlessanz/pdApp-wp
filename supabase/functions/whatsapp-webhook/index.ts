@@ -7,6 +7,7 @@ import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { sendText } from "../_shared/whatsapp.ts";
 import { leerRespuesta, procesarIntake } from "../_shared/intake.ts";
+import { procesarRespuestaOferta } from "../_shared/respuestas.ts";
 
 const encoder = new TextEncoder();
 
@@ -152,6 +153,19 @@ Deno.serve(async (req) => {
               "Alta confirmada. Escriu BAJA per deixar de rebre notificacions.",
             );
             continue;
+          }
+
+          // Respuesta de una entidad a una oferta (sí/no). Tiene PRIORIDAD sobre
+          // el intake: si el número tiene una oferta pendiente y contesta, se
+          // atiende aquí. Así se resuelve el doble rol (un productor que también
+          // es entidad y responde a una oferta no cae en el formulario de intake).
+          try {
+            if (await procesarRespuestaOferta(supabase, from, message)) continue;
+          } catch (err) {
+            console.error(
+              "respuesta-oferta:",
+              err instanceof Error ? err.message : String(err),
+            );
           }
 
           // Intake conversacional: solo responde si el teléfono es de un

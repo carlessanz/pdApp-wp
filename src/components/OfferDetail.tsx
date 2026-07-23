@@ -11,7 +11,7 @@ import { cargarNumerosTest } from '../lib/metaTest'
 import { cargarEmailsTest } from '../lib/emailTest'
 import { useT } from '../lib/i18n'
 import { textoRecollidaConfirmada, textoAlbaran } from '../lib/textos'
-import type { Canalizacion, Excedente } from '../types'
+import type { Canalizacion, Excedente, OfertaRespuesta } from '../types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,15 +21,44 @@ interface Props {
   onBack: () => void
 }
 
+// Escapa el texto para HTML y convierte los saltos de línea en <br> (para el
+// portapapeles: el <div> del clipboard no interpreta el LF suelto como salto).
+function textoAHtml(texto: string): string {
+  return texto
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+}
+
 function ofertaHtml(texto: string): string {
   const esc = texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return `<div style="font-family:'Space Grotesk',sans-serif;color:#234C66"><pre style="white-space:pre-wrap;font-family:inherit;font-size:15px;line-height:1.5;background:#fff;border:1px solid #E0EBC7;border-radius:12px;padding:16px">${esc}</pre></div>`
+}
+
+// Fila de oferta_respuestas con el nombre de la entidad (embed de PostgREST).
+type RespuestaConEntidad = OfertaRespuesta & {
+  entidades: { nombre: string; poblacion: string | null } | null
+}
+
+function fechaCorta(iso: string): string {
+  const d = new Date(iso)
+  const dia = d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })
+  const hora = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+  return `${dia} ${hora}`
+}
+
+function estadoRespuestaClases(estado: string): string {
+  switch (estado) {
+    case 'acceptada': return 'bg-green-100 text-green-800'
+    case 'rebutjada': return 'bg-red-100 text-red-700'
+    default: return 'bg-muted text-muted-foreground'
+  }
 }
 
 export default function OfferDetail({ excedente, onBack }: Props) {
   const { t } = useT()
   const [exc, setExc] = useState<Excedente>(excedente)
   const [canalizaciones, setCanalizaciones] = useState<Canalizacion[]>([])
+  const [respuestas, setRespuestas] = useState<RespuestaConEntidad[]>([])
   const [ranking, setRanking] = useState<EntidadPuntuada[]>([])
   const [rankingError, setRankingError] = useState<string | null>(null)
   const [cargandoRanking, setCargandoRanking] = useState(true)
@@ -43,11 +72,31 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   const faltan = Math.max(0, total - canalizados)
 
   const copiar = useCallback((texto: string, id: string) => {
-    void navigator.clipboard.writeText(texto).then(() => {
+    const marcar = () => {
       setCopiado(id)
       toast.success(t('od.copied'))
       setTimeout(() => setCopiado(null), 1500)
-    })
+    }
+    // Se copia text/plain (con los saltos de línea reales) y, además, text/html
+    // con <br>: algunos destinos (WhatsApp Web, correo, documentos) colapsan el
+    // salto de línea suelto al pegar solo texto plano, y con la versión HTML lo
+    // conservan. Si el navegador no soporta ClipboardItem, se cae a writeText.
+    const html = `<div style="white-space:pre-wrap">${textoAHtml(texto)}</div>`
+    try {
+      if ('write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+        const item = new ClipboardItem({
+          'text/plain': new Blob([texto], { type: 'text/plain' }),
+          'text/html': new Blob([html], { type: 'text/html' }),
+        })
+        void navigator.clipboard.write([item]).then(marcar, () => {
+          void navigator.clipboard.writeText(texto).then(marcar)
+        })
+        return
+      }
+    } catch {
+      // Navegador sin ClipboardItem: se usa el fallback de abajo.
+    }
+    void navigator.clipboard.writeText(texto).then(marcar)
   }, [t])
 
   const recargar = useCallback(async () => {
@@ -60,6 +109,28 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   }, [excedente.id])
 
   useEffect(() => { void recargar() }, [recargar])
+
+  const recargarRespuestas = useCallback(async () => {
+    const { data } = await supabase
+      .from('oferta_respuestas')
+      .select('*, entidades(nombre, poblacion)')
+      .eq('excedente_id', excedente.id)
+      .order('enviado_at', { ascending: false })
+    setRespuestas((data as RespuestaConEntidad[]) ?? [])
+  }, [excedente.id])
+
+  useEffect(() => {
+    void recargarRespuestas()
+    // La entidad responde por WhatsApp → el webhook actualiza la fila → aquí se
+    // refleja en vivo, sin recargar la página.
+    const channel = supabase
+      .channel(`oferta-respuestas-${excedente.id}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'oferta_respuestas', filter: `excedente_id=eq.${excedente.id}` },
+        () => { void recargarRespuestas() })
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [excedente.id, recargarRespuestas])
 
   useEffect(() => {
     setCargandoRanking(true)
@@ -91,11 +162,38 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     setRanking(r.ranking)
   }
 
+  // Deja constancia de que la oferta se envió a la entidad, en estado 'pendent'.
+  // La respuesta por WhatsApp la actualizará el webhook; onConflict hace que
+  // reenviar a la misma entidad reinicie la fila en vez de duplicarla.
+  async function registrarEnvio(ent: EntidadPuntuada, canal: 'whatsapp' | 'email') {
+    const { error } = await supabase.from('oferta_respuestas').upsert({
+      excedente_id: excedente.id,
+      entidad_id: ent.id,
+      telefono: ent.telefono,
+      canal,
+      estado: 'pendent',
+      enviado_at: new Date().toISOString(),
+      respondido_at: null,
+      mensaje_respuesta: null,
+    }, { onConflict: 'excedente_id,entidad_id' })
+    if (error) console.error('oferta_respuestas upsert:', error.message)
+    await recargarRespuestas()
+  }
+
+  // Marcado manual (imprescindible para el email, que no tiene respuesta automática).
+  async function marcarRespuesta(id: string, estado: 'pendent' | 'acceptada' | 'rebutjada') {
+    await supabase.from('oferta_respuestas').update({
+      estado,
+      respondido_at: estado === 'pendent' ? null : new Date().toISOString(),
+    }).eq('id', id)
+    await recargarRespuestas()
+  }
+
   async function enviarOfertaWhatsApp(ent: EntidadPuntuada) {
     if (!ent.telefono || !ent.opt_in || !numerosTest.has(ent.telefono)) return
     if (!exc.texto_oferta) { toast.error(t('od.no_text')); return }
     const r = await sendWhatsApp({ to: ent.telefono, type: 'text', body: exc.texto_oferta })
-    if (r.ok) { toast.success(t('od.sent_wa', { name: ent.nombre })); return }
+    if (r.ok) { await registrarEnvio(ent, 'whatsapp'); toast.success(t('od.sent_wa', { name: ent.nombre })); return }
     const data = r.data as { code?: string } | null
     if (data?.code === 'no_test_recipient') toast.error(t('od.no_test_meta', { name: ent.nombre }))
     else if (data?.code === 'unknown_contact') toast.error(t('od.must_write', { name: ent.nombre }))
@@ -111,7 +209,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
       to: email, subject: `Oferta d'excedent: ${exc.producto ?? ''}`,
       text: exc.texto_oferta, html: ofertaHtml(exc.texto_oferta),
     })
-    if (r.ok) { toast.success(t('od.sent_email', { name: ent.nombre })); return }
+    if (r.ok) { await registrarEnvio(ent, 'email'); toast.success(t('od.sent_email', { name: ent.nombre })); return }
     const data = r.data as { code?: string } | null
     if (data?.code === 'no_test_recipient') toast.error(t('od.email_no_test', { email }))
     else toast.error(t('od.no_send_email'))
@@ -233,6 +331,39 @@ export default function OfferDetail({ excedente, onBack }: Props) {
                   <Button size="sm" variant="outline" disabled={!enEmail}
                     title={!email ? t('od.no_email') : !enEmail ? t('od.email_not_test') : undefined}
                     onClick={() => void enviarOfertaEmail(ent)}>{t('od.email')}</Button>
+                </div>
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">{t('od.responses')}</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {respuestas.length === 0 && <p className="text-sm text-muted-foreground">{t('od.resp_none')}</p>}
+          {respuestas.map((r) => {
+            const nombre = r.entidades?.nombre ?? r.telefono ?? '—'
+            const cuando = r.respondido_at ?? r.enviado_at
+            return (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2.5 text-sm">
+                <div className="flex items-center gap-2.5">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${estadoRespuestaClases(r.estado)}`}>
+                    {t(`od.rs_${r.estado}`)}
+                  </span>
+                  <div>
+                    <div className="font-medium">{nombre}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t(`od.ch_${r.canal}`)} · {fechaCorta(cuando)}
+                      {r.mensaje_respuesta ? ` · «${r.mensaje_respuesta}»` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="outline" disabled={r.estado === 'acceptada'}
+                    onClick={() => void marcarRespuesta(r.id, 'acceptada')}>{t('od.rs_accept')}</Button>
+                  <Button size="sm" variant="outline" disabled={r.estado === 'rebutjada'}
+                    onClick={() => void marcarRespuesta(r.id, 'rebutjada')}>{t('od.rs_reject')}</Button>
                 </div>
               </div>
             )

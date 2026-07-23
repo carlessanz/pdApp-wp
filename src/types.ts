@@ -151,6 +151,20 @@ export interface Canalizacion {
   created_at: string
 }
 
+export interface OfertaRespuesta {
+  id: string
+  excedente_id: string
+  entidad_id: string | null
+  /** E.164 sin '+'; casa la respuesta entrante con la fila pendiente */
+  telefono: string | null
+  canal: 'whatsapp' | 'email'
+  estado: 'pendent' | 'acceptada' | 'rebutjada'
+  mensaje_respuesta: string | null
+  enviado_at: string
+  respondido_at: string | null
+  created_at: string
+}
+
 export interface IntakeSession {
   id: string
   telefono: string | null
