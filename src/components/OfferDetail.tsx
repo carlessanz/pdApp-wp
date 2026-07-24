@@ -250,6 +250,8 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     const fd = new FormData(e.currentTarget)
     const kg = Number(fd.get('kg') || 0)
     if (!r.entidad_id || !kg) { toast.error(t('od.no_text')); return }
+    // Aviso no bloqueante si se canaliza más de lo que falta por cubrir.
+    if (kg > faltan && !window.confirm(t('od.over_alloc', { n: faltan }))) return
     const preuRaw = String(fd.get('preu') ?? '')
     const preu = preuRaw !== '' ? Number(preuRaw) : null
     const { data: canal, error } = await supabase.from('canalizaciones').insert({
@@ -352,6 +354,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     const entidad_id = String(fd.get('entidad') || '')
     const kg_confirmados = Number(fd.get('kg') || 0)
     if (!entidad_id || !kg_confirmados) return
+    if (kg_confirmados > faltan && !window.confirm(t('od.over_alloc', { n: faltan }))) return
     await supabase.from('canalizaciones').insert({
       excedente_id: excedente.id, entidad_id, kg_confirmados,
       caixes_entregades: Number(fd.get('caixes') || 0) || null,

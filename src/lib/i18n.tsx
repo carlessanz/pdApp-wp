@@ -133,6 +133,7 @@ const ca: Dict = {
   'od.reject_reason': 'Motiu del rebuig? (opcional)',
   'od.approved': 'Oferta aprovada i convertida en canalització.',
   'od.approved_kg': 'Canalitzada · {n} kg', 'od.rejected_appr': 'Rebutjada per l’equip',
+  'od.over_alloc': 'Estàs canalitzant més kg dels que falten ({n}). Continuar igualment?',
   // messaging
   'msg.contacts': 'Contactes', 'msg.no_contacts': 'Encara no hi ha contactes.',
   'msg.search_contact': 'Cerca contacte…', 'msg.no_match_contact': 'Cap contacte coincideix amb la cerca.',
@@ -297,6 +298,7 @@ const es: Dict = {
   'od.reject_reason': '¿Motivo del rechazo? (opcional)',
   'od.approved': 'Oferta aprobada y convertida en canalización.',
   'od.approved_kg': 'Canalizada · {n} kg', 'od.rejected_appr': 'Rechazada por el equipo',
+  'od.over_alloc': 'Estás canalizando más kg de los que faltan ({n}). ¿Continuar igualmente?',
   'msg.contacts': 'Contactos', 'msg.no_contacts': 'No hay contactos todavía.',
   'msg.search_contact': 'Buscar contacto…', 'msg.no_match_contact': 'Ningún contacto coincide con la búsqueda.',
   'msg.unanswered': '{n} sin contestar',

@@ -559,7 +559,11 @@ mediante el diálogo (§5) —con `kg_solicitados` y `preu_ofert`— y el detall
 fila `acceptada` pendiente de aprobar, el **superadmin** ajusta kg/preu y pulsa **«Aprovar i
 canalitzar»**: se crea la `canalización` (`kg_confirmados`), se enlaza (`canalizacion_id`) y el
 excedente avanza a `parcial`/`bloqueada` (misma regla que el alta manual); o **«Rebutjar»** con motiu.
-Hoy cualquier `authenticated` puede aprobar (no hay roles; §12).
+Si los kg superan los que **faltan** por cubrir, pide **confirmación** (aviso no bloqueante, igual que
+el alta manual): evita canalizar de más sin querer, pero permite hacerlo si es intencionado. Hoy
+cualquier `authenticated` puede aprobar (no hay roles; §12). La aprobación/canalización necesita las
+políticas de escritura de `canalizaciones`/`excedentes` (§4; se añadieron en
+`20260724100000_…`, antes fallaba con «row-level security policy»).
 
 **Copiar el texto de la oferta** escribe al portapapeles `text/plain` (con `\n`) **y** `text/html`
 con **cada línea en su propio `<div>`** (`textoAHtmlPortapapeles`): así los saltos se conservan al
