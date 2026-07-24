@@ -532,14 +532,21 @@ es **genérico**: recibe las definiciones de `src/lib/crudCampos.ts` (`PRODUCTOR
 mensaje» (en listado y ficha) asegura el teléfono como `wa_contact` y abre Mensajería, tanto
 para productores como para entidades.
 
-**Solo los usuarios de prueba (`es_test`) pueden recibir.** En el detalle, **«Enviar oferta»**
-(WhatsApp o correo) se habilita únicamente si la entidad es `es_test` (y, para WhatsApp, tiene
-`opt_in`); el servidor lo vuelve a comprobar (§8). En el entorno de test ese botón
-envía el **texto de la oferta** (`texto_oferta`) como **texto dentro de la ventana de 24 h** —la
-abre la entidad al escribir al número— porque las plantillas propias (`oferta_excedent`) no son
-usables en el número de test (solo `hello_world`). En producción, con la plantilla aprobada, se
-volvería a enviar como plantilla. Si la entidad no ha escrito aún, el envío responde
-`409 window_closed`/`404 unknown_contact` y se le pide que escriba primero.
+**Envío de la oferta y feedback.** Los botones **«WhatsApp»/«Correu»** del detalle son **siempre
+clicables** (rollover) y **cada clic da un toast**: enviado, o el motivo exacto (sense telèfon/correu,
+opt-in, `es_test` amb mode test, finestra tancada). El gate `es_test` del **cliente** ahora **respeta
+`test_mode`** (`getTestMode()`): con el modo test apagado (producción) se puede enviar a cualquier
+entidad; el servidor lo revalida (§8). El envío intenta primero el **texto de la oferta**
+(`texto_oferta`) dentro de la ventana de 24 h (gratis). Si el servidor responde `window_closed`, se
+**ofrece enviarla como plantilla `oferta_excedent`** (acción explícita en el toast, porque tiene
+coste), única vía de Meta para llegar a un receptor que no ha escrito: `enviarOfertaPlantilla` asegura
+el `wa_contact`, construye los `components` con `construirComponentsOferta` (`src/lib/ofertaTemplate.ts`,
+mapeo de `plantillas-meta.md §1`) y envía `type:'template'`. Está tras el flag
+**`PLANTILLA_OFERTA_APROVADA`** (`src/lib/plantillas.ts`, hoy `false`): mientras esté apagado, el
+toast avisa honestamente de que hace falta la plantilla aprobada + número de producción; el envío por
+plantilla real se activa poniendo el flag a `true` cuando Meta la apruebe (§12.2). **Mensajería** también
+confirma el envío de la salutació/plantilla (toast de éxito) y **bloquea reenvíos ~30 s** («Enviada ✓»),
+para no duplicar plantillas de pago.
 
 **Aceptación y aprobación de la oferta (panel).** Cada envío desde `OfferDetail` (WhatsApp o email)
 deja una fila `pendent` en `oferta_respuestas`. La entidad que responde por WhatsApp la actualiza sola
@@ -833,12 +840,17 @@ POMA en producción real quedan pasos de configuración y negocio.
 
 1. ~~**Salir del modo PoC**~~ — **hecho (2026-07-22)**: `WHATSAPP_ENVIO_REAL=true` en remoto. Lo
    que contiene el riesgo ahora es el entorno de test de Meta (≤5 números) + `meta_test_recipients`.
-2. **Plantillas propias en Meta**: `oferta_excedent`, `confirmacio_productor` y las de primer
-   contacto **`salutacio_productor` / `salutacio_entitat`** (català, piden responder «OK») hay que
-   darlas de alta y esperar su aprobación (contenido en `_shared/plantillas-meta.md`). En test solo
-   `hello_world` está aprobada, así que ni el envío real de la oferta ni las salutacions catalanes
-   funcionan hasta entonces; el código ya las selecciona por rol tras el flag
-   `PLANTILLES_CA_APROVADES` de `src/lib/plantillas.ts` (hoy `false` → se usa `hello_world`).
+2. **Plantillas propias en Meta — desbloquea el envío a receptores fuera de ventana.** Registrar y
+   esperar aprobación de `oferta_excedent`, `confirmacio_productor` y las de primer contacto
+   **`salutacio_productor` / `salutacio_entitat`** (contenido en `_shared/plantillas-meta.md`). **Esto
+   es lo que permite mandar una oferta a un receptor que NO ha escrito en 24 h**: fuera de la ventana
+   Meta solo entrega plantillas. Requiere además un **número de producción** con verificación de
+   empresa y método de pago (en el sandbox solo `hello_world` y solo los ≤5 números de
+   `meta_test_recipients`). El código ya está cableado: la salutació por rol tras
+   `PLANTILLES_CA_APROVADES`, y el **envío de la oferta como plantilla** (`enviarOfertaPlantilla` en
+   `OfferDetail`) tras **`PLANTILLA_OFERTA_APROVADA`** (ambos en `src/lib/plantillas.ts`, hoy `false`).
+   Al aprobarlas: poner los dos flags a `true`, vaciar `meta_test_recipients` y (opcional) apagar el
+   modo test. Un solo commit.
 3. **Opt-in real de las entidades**: hoy `false` en las 111; el toggle deja la mecánica, pero
    recoger el consentimiento es trabajo de negocio.
 4. **Formato definitivo del albarán**: se genera con placeholders (`src/lib/textos.ts`); el

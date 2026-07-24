@@ -21,7 +21,7 @@ interface Props {
 }
 
 interface Notice {
-  kind: 'error' | 'warning'
+  kind: 'error' | 'warning' | 'success'
   text: string
 }
 
@@ -64,6 +64,8 @@ export default function Conversation({ contact, onBack, onDeleted }: Props) {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
+  // Tras enviar la plantilla, se bloquea el botón un rato para no reenviarla por error.
+  const [justSent, setJustSent] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -159,7 +161,17 @@ export default function Conversation({ contact, onBack, onDeleted }: Props) {
       })
     }
     setSending(false)
-    if (!result.ok) setNotice(noticeFromError(result.data, t))
+    if (!result.ok) { setNotice(noticeFromError(result.data, t)); return }
+    // Éxito: confirmar (faltaba feedback) y evitar reenvíos accidentales.
+    const nombre = contact.name ?? t('msg.this_contact')
+    if (ventanaAbierta) {
+      toast.success(t('msg.greeting_sent'))
+    } else {
+      toast.success(t('msg.template_sent', { name: nombre }))
+      setNotice({ kind: 'success', text: t('msg.template_sent', { name: nombre }) })
+    }
+    setJustSent(true)
+    setTimeout(() => setJustSent(false), 30000)
   }
 
   return (
@@ -210,7 +222,9 @@ export default function Conversation({ contact, onBack, onDeleted }: Props) {
 
       {notice && (
         <div className={cn('mx-5 rounded-md px-3 py-2 text-sm',
-          notice.kind === 'warning' ? 'bg-yellow-50 text-yellow-800' : 'bg-red-50 text-red-700')}>
+          notice.kind === 'success' ? 'bg-green-50 text-green-700'
+            : notice.kind === 'warning' ? 'bg-yellow-50 text-yellow-800'
+            : 'bg-red-50 text-red-700')}>
           {notice.text}
         </div>
       )}
@@ -226,8 +240,8 @@ export default function Conversation({ contact, onBack, onDeleted }: Props) {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button type="button" variant={ventanaAbierta ? 'outline' : 'default'}
-              onClick={handleSendTemplate} disabled={sending}>
-              {ventanaAbierta ? t('msg.greeting') : t('msg.first_msg')}
+              onClick={handleSendTemplate} disabled={sending || justSent}>
+              {justSent ? t('msg.sent_wait') : ventanaAbierta ? t('msg.greeting') : t('msg.first_msg')}
             </Button>
           </TooltipTrigger>
           <TooltipContent className="max-w-xs text-center">{t('msg.tooltip')}</TooltipContent>

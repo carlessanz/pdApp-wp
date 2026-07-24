@@ -9,6 +9,9 @@ import { priorizarEntidades } from '../lib/poma'
 import type { EntidadPuntuada } from '../lib/poma'
 import { useT } from '../lib/i18n'
 import { textoRecollidaConfirmada, textoAlbaran } from '../lib/textos'
+import { getTestMode } from '../lib/settings'
+import { PLANTILLA_OFERTA, PLANTILLA_OFERTA_APROVADA } from '../lib/plantillas'
+import { construirComponentsOferta } from '../lib/ofertaTemplate'
 import type { Canalizacion, Excedente, OfertaRespuesta } from '../types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,6 +78,11 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   // Input de fecha controlado: se re-sincroniza cuando `exc` cambia tras recargar
   // (p. ej. si el intake dejó una fecha parseada o el usuario la edita).
   const [fecha, setFecha] = useState<string>(excedente.disponible_hasta ?? '')
+  const [testMode, setTestMode] = useState(true)
+  // Productor y municipi para las variables de la plantilla oferta_excedent.
+  const [datosOferta, setDatosOferta] = useState<{ productor: string | null; municipi: string | null }>(
+    { productor: null, municipi: null },
+  )
 
   const canalizados = canalizaciones.reduce((s, c) => s + Number(c.kg_confirmados ?? 0), 0)
   const total = Number(exc.kg_total ?? 0)
@@ -166,14 +174,34 @@ export default function OfferDetail({ excedente, onBack }: Props) {
 
   useEffect(() => { setFecha(exc.disponible_hasta ?? '') }, [exc.disponible_hasta])
 
+  // El gate es_test solo aplica con el modo test activo (igual que el servidor).
+  useEffect(() => { void getTestMode().then(setTestMode) }, [])
+
+  useEffect(() => {
+    // Productor + municipi para rellenar la plantilla oferta_excedent (fuera de ventana).
+    void (async () => {
+      const [prod, ubi] = await Promise.all([
+        excedente.productor_id
+          ? supabase.from('productores').select('name, empresa, poblacion').eq('id', excedente.productor_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        excedente.ubicacion_id
+          ? supabase.from('productor_ubicaciones').select('municipio').eq('id', excedente.ubicacion_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ])
+      const p = prod.data as { name?: string; empresa?: string; poblacion?: string } | null
+      const u = ubi.data as { municipio?: string } | null
+      setDatosOferta({ productor: p?.empresa || p?.name || null, municipi: u?.municipio || p?.poblacion || null })
+    })()
+  }, [excedente.productor_id, excedente.ubicacion_id])
+
   // Matching ordenado para mostrar primero a quién SÍ se puede contactar
   // (es_test + opt-in + teléfono, o es_test + email). El sort es estable: dentro
   // de cada grupo se conserva la puntuación que ya calculó el servidor.
   const rankingOrdenado = useMemo(() => {
     const contactable = (e: EntidadPuntuada) =>
-      esTest.has(e.id) && ((e.opt_in && !!e.telefono) || !!emailPorEntidad[e.id])
+      (!testMode || esTest.has(e.id)) && ((e.opt_in && !!e.telefono) || !!emailPorEntidad[e.id])
     return [...ranking].sort((a, b) => Number(contactable(b)) - Number(contactable(a)))
-  }, [ranking, esTest, emailPorEntidad])
+  }, [ranking, esTest, emailPorEntidad, testMode])
 
   async function guardarFecha(valor: string) {
     setFecha(valor)
@@ -253,21 +281,58 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   }
 
   async function enviarOfertaWhatsApp(ent: EntidadPuntuada) {
-    if (!ent.telefono || !ent.opt_in || !esTest.has(ent.id)) return
+    // Botón siempre clicable: cada motivo se avisa con un toast, no con un return mudo.
+    if (!ent.telefono) { toast.error(t('od.need_phone', { name: ent.nombre })); return }
+    if (testMode && !esTest.has(ent.id)) { toast.error(t('od.not_test_toast', { name: ent.nombre })); return }
     if (!exc.texto_oferta) { toast.error(t('od.no_text')); return }
     const r = await sendWhatsApp({ to: ent.telefono, type: 'text', body: exc.texto_oferta })
     if (r.ok) { await registrarEnvio(ent, 'whatsapp'); toast.success(t('od.sent_wa', { name: ent.nombre })); return }
     const data = r.data as { code?: string } | null
+    if (data?.code === 'window_closed') {
+      // Fuera de la ventana de 24 h solo cabe una plantilla aprobada por Meta.
+      if (!PLANTILLA_OFERTA_APROVADA) { toast.warning(t('od.tpl_not_approved', { name: ent.nombre })); return }
+      if (!ent.opt_in) { toast.error(t('od.no_optin_toast', { name: ent.nombre })); return }
+      toast.warning(t('od.closed_offer_tpl', { name: ent.nombre }), {
+        action: { label: t('od.send_as_tpl'), onClick: () => void enviarOfertaPlantilla(ent) },
+      })
+      return
+    }
     if (data?.code === 'no_test_user') toast.error(t('od.not_test_toast', { name: ent.nombre }))
     else if (data?.code === 'no_test_recipient') toast.error(t('od.no_test_meta', { name: ent.nombre }))
     else if (data?.code === 'unknown_contact') toast.error(t('od.must_write', { name: ent.nombre }))
-    else if (data?.code === 'window_closed') toast.error(t('od.window_closed', { name: ent.nombre }))
+    else toast.error(t('od.no_send_wa'))
+  }
+
+  // Envía la oferta como plantilla `oferta_excedent` (fuera de ventana). Asegura el
+  // wa_contact antes, para pasar los gates unknown_contact/opt_in del servidor.
+  async function enviarOfertaPlantilla(ent: EntidadPuntuada) {
+    if (!ent.telefono) { toast.error(t('od.need_phone', { name: ent.nombre })); return }
+    await supabase.from('wa_contacts').upsert(
+      { phone: ent.telefono, name: ent.nombre, opt_in: true, opt_in_at: new Date().toISOString() },
+      { onConflict: 'phone', ignoreDuplicates: true },
+    )
+    const components = construirComponentsOferta({
+      producto: exc.producto, variedad: exc.variedad,
+      productor: datosOferta.productor, municipi: datosOferta.municipi,
+      kg: exc.kg_total, caixes: exc.num_caixes,
+      disponible: exc.disponible_hasta, horari: exc.horari_recollida,
+    })
+    const r = await sendWhatsApp({
+      to: ent.telefono, type: 'template',
+      template: PLANTILLA_OFERTA.name, language: PLANTILLA_OFERTA.language, components,
+    })
+    if (r.ok) { await registrarEnvio(ent, 'whatsapp'); toast.success(t('od.sent_tpl', { name: ent.nombre })); return }
+    const data = r.data as { code?: string } | null
+    if (data?.code === 'no_opt_in') toast.error(t('od.no_optin_toast', { name: ent.nombre }))
+    else if (data?.code === 'unknown_contact') toast.error(t('od.must_write', { name: ent.nombre }))
+    else if (data?.code === 'no_test_user') toast.error(t('od.not_test_toast', { name: ent.nombre }))
     else toast.error(t('od.no_send_wa'))
   }
 
   async function enviarOfertaEmail(ent: EntidadPuntuada) {
     const email = emailPorEntidad[ent.id]
-    if (!email || !esTest.has(ent.id)) return
+    if (!email) { toast.error(t('od.no_email_toast', { name: ent.nombre })); return }
+    if (testMode && !esTest.has(ent.id)) { toast.error(t('od.not_test_toast', { name: ent.nombre })); return }
     if (!exc.texto_oferta) { toast.error(t('od.no_text')); return }
     const r = await enviarEmail({
       to: email, subject: `Oferta d'excedent: ${exc.producto ?? ''}`,
@@ -382,8 +447,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
           {cargandoRanking && <p className="text-sm text-muted-foreground">{t('od.calculating')}</p>}
           {rankingError && <p className="text-sm text-destructive">{rankingError}</p>}
           {!cargandoRanking && !rankingError && rankingOrdenado.slice(0, 15).map((ent) => {
-            const puedeTest = esTest.has(ent.id)
-            const email = emailPorEntidad[ent.id]
+            const puedeTest = !testMode || esTest.has(ent.id)
             // Si no es usuari de prova, se muestra el motivo visible (antes solo en el title).
             const motivos = puedeTest ? ent.motivos : [...ent.motivos, t('od.not_test')]
             return (
@@ -401,11 +465,8 @@ export default function OfferDetail({ excedente, onBack }: Props) {
                     <input type="checkbox" checked={ent.opt_in} onChange={() => void toggleOptIn(ent.id, ent.opt_in)} />
                     {t('od.optin')}
                   </label>
-                  <Button size="sm" disabled={!ent.opt_in || !ent.telefono || !puedeTest}
-                    title={!ent.opt_in ? t('od.no_optin') : !puedeTest ? t('od.not_test') : undefined}
-                    onClick={() => void enviarOfertaWhatsApp(ent)}>{t('od.whatsapp')}</Button>
-                  <Button size="sm" variant="outline" disabled={!email || !puedeTest}
-                    title={!email ? t('od.no_email') : !puedeTest ? t('od.not_test') : undefined}
+                  <Button size="sm" onClick={() => void enviarOfertaWhatsApp(ent)}>{t('od.whatsapp')}</Button>
+                  <Button size="sm" variant="outline"
                     onClick={() => void enviarOfertaEmail(ent)}>{t('od.email')}</Button>
                 </div>
               </div>

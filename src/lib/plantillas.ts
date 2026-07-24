@@ -26,6 +26,15 @@ const PLANTILLES: Record<'productor' | 'entitat' | 'fallback', PlantillaRef> = {
   fallback: { name: 'hello_world', language: 'en_US' },
 }
 
+// Plantilla de oferta a entidades, usada para enviar la oferta FUERA de la ventana
+// de 24 h (única vía de Meta para iniciar sin que el receptor haya escrito).
+// Contenido y mapeo de las 7 variables en
+// supabase/functions/_shared/plantillas-meta.md (§1). Requiere aprobación en Meta
+// + número de producción; hasta entonces el flag queda false y la app no la envía
+// (evita el error 132001 "plantilla no existe" en el número de test).
+export const PLANTILLA_OFERTA_APROVADA = false
+export const PLANTILLA_OFERTA: PlantillaRef = { name: 'oferta_excedent', language: 'ca' }
+
 /** Devuelve la plantilla de primer contacto según el rol del destinatario. */
 export function plantillaPrimerContacte(rol: RolContacte): PlantillaRef {
   if (!PLANTILLES_CA_APROVADES) return PLANTILLES.fallback
