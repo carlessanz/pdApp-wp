@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowLeft, Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
@@ -72,6 +72,9 @@ export default function OfferDetail({ excedente, onBack }: Props) {
   const [esTest, setEsTest] = useState<Set<string>>(new Set())
   const [emailPorEntidad, setEmailPorEntidad] = useState<Record<string, string | null>>({})
   const [copiado, setCopiado] = useState<string | null>(null)
+  // Input de fecha controlado: se re-sincroniza cuando `exc` cambia tras recargar
+  // (p. ej. si el intake dejó una fecha parseada o el usuario la edita).
+  const [fecha, setFecha] = useState<string>(excedente.disponible_hasta ?? '')
 
   const canalizados = canalizaciones.reduce((s, c) => s + Number(c.kg_confirmados ?? 0), 0)
   const total = Number(exc.kg_total ?? 0)
@@ -161,7 +164,19 @@ export default function OfferDetail({ excedente, onBack }: Props) {
     })
   }, [])
 
+  useEffect(() => { setFecha(exc.disponible_hasta ?? '') }, [exc.disponible_hasta])
+
+  // Matching ordenado para mostrar primero a quién SÍ se puede contactar
+  // (es_test + opt-in + teléfono, o es_test + email). El sort es estable: dentro
+  // de cada grupo se conserva la puntuación que ya calculó el servidor.
+  const rankingOrdenado = useMemo(() => {
+    const contactable = (e: EntidadPuntuada) =>
+      esTest.has(e.id) && ((e.opt_in && !!e.telefono) || !!emailPorEntidad[e.id])
+    return [...ranking].sort((a, b) => Number(contactable(b)) - Number(contactable(a)))
+  }, [ranking, esTest, emailPorEntidad])
+
   async function guardarFecha(valor: string) {
+    setFecha(valor)
     await supabase.from('excedentes').update({ disponible_hasta: valor || null }).eq('id', excedente.id)
     await recargar()
   }
@@ -320,6 +335,16 @@ export default function OfferDetail({ excedente, onBack }: Props) {
           <p className="text-sm text-muted-foreground">
             {exc.producto}{exc.variedad ? ` · ${exc.variedad}` : ''} — {exc.estado}
           </p>
+          {exc.modalitat && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-secondary/60 px-2 py-0.5 text-xs font-semibold text-primary">
+                {t(`od.mod_${exc.modalitat}`)}
+              </span>
+              {(exc.modalitat === 'venda' || exc.modalitat === 'maquila') && exc.preu_minim != null && (
+                <span className="text-sm font-medium text-primary">{exc.preu_minim} €/kg</span>
+              )}
+            </div>
+          )}
         </div>
         <div className="text-right">
           <div className="text-lg font-bold">{canalizados}/{total} kg</div>
@@ -345,7 +370,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
       <Card>
         <CardHeader><CardTitle className="text-base">{t('od.available_until')}</CardTitle></CardHeader>
         <CardContent className="flex items-center gap-3">
-          <Input type="date" className="w-auto" defaultValue={exc.disponible_hasta ?? ''}
+          <Input type="date" className="w-auto" value={fecha}
             onChange={(ev) => void guardarFecha(ev.target.value)} />
           {vencida && <span className="text-sm text-destructive">{t('od.expired')}</span>}
         </CardContent>
@@ -356,9 +381,11 @@ export default function OfferDetail({ excedente, onBack }: Props) {
         <CardContent className="space-y-2">
           {cargandoRanking && <p className="text-sm text-muted-foreground">{t('od.calculating')}</p>}
           {rankingError && <p className="text-sm text-destructive">{rankingError}</p>}
-          {!cargandoRanking && !rankingError && ranking.slice(0, 15).map((ent) => {
+          {!cargandoRanking && !rankingError && rankingOrdenado.slice(0, 15).map((ent) => {
             const puedeTest = esTest.has(ent.id)
             const email = emailPorEntidad[ent.id]
+            // Si no es usuari de prova, se muestra el motivo visible (antes solo en el title).
+            const motivos = puedeTest ? ent.motivos : [...ent.motivos, t('od.not_test')]
             return (
               <div key={ent.id}
                 className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2.5 ${ent.pendiente ? 'bg-yellow-50 opacity-80' : ''}`}>
@@ -366,7 +393,7 @@ export default function OfferDetail({ excedente, onBack }: Props) {
                   <span className="w-6 text-center text-lg font-bold text-primary">{ent.puntuacion}</span>
                   <div>
                     <div className="font-medium">{ent.nombre}{ent.poblacion ? ` · ${ent.poblacion}` : ''}</div>
-                    <div className="text-xs text-muted-foreground">{ent.motivos.join(' · ') || t('od.no_match_ent')}</div>
+                    <div className="text-xs text-muted-foreground">{motivos.join(' · ') || t('od.no_match_ent')}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

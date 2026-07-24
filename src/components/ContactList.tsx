@@ -31,6 +31,9 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
   const [formError, setFormError] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
   const [unanswered, setUnanswered] = useState<Record<string, number>>({})
+  const [tipo, setTipo] = useState<'tots' | 'productors' | 'receptors'>('tots')
+  const [prodSet, setProdSet] = useState<Set<string>>(new Set())
+  const [entSet, setEntSet] = useState<Set<string>>(new Set())
 
   // Carga los mensajes para contar los "sin contestar" por contacto y se suscribe a
   // Realtime, de modo que la lista se reordena en cuanto llega un mensaje nuevo.
@@ -52,18 +55,36 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
     return () => { cancelled = true; void supabase.removeChannel(channel) }
   }, [])
 
-  // Filtro por nombre o teléfono; luego se ordena poniendo primero los contactos con
-  // mensajes sin contestar (más pendientes arriba), conservando el resto del orden.
+  // Clasifica los contactos como productor y/o receptor cruzando su teléfono con
+  // productores.phone y entidades.telefono (normalizado a solo dígitos), para el
+  // filtro de tipo. Un contacto puede ser ambos (doble rol) y sale en los dos.
+  useEffect(() => {
+    const norm = (p: string | null) => (p ?? '').replace(/\D/g, '')
+    void Promise.all([
+      supabase.from('productores').select('phone'),
+      supabase.from('entidades').select('telefono'),
+    ]).then(([prod, ent]) => {
+      setProdSet(new Set((prod.data ?? []).map((r) => norm(r.phone)).filter(Boolean)))
+      setEntSet(new Set((ent.data ?? []).map((r) => norm(r.telefono)).filter(Boolean)))
+    })
+  }, [])
+
+  // Filtro por tipo (tots/productors/receptors) y por nombre o teléfono; luego se
+  // ordena poniendo primero los contactos con mensajes sin contestar (más
+  // pendientes arriba), conservando el resto del orden.
   const filtrados = useMemo(() => {
+    const norm = (p: string) => p.replace(/\D/g, '')
     const q = busqueda.trim().toLowerCase()
     const qDigits = q.replace(/\D/g, '')
-    const base = q
+    let base = q
       ? contacts.filter((c) =>
           (c.name ?? '').toLowerCase().includes(q) ||
           (qDigits !== '' && c.phone.includes(qDigits)))
       : contacts
+    if (tipo === 'productors') base = base.filter((c) => prodSet.has(norm(c.phone)))
+    else if (tipo === 'receptors') base = base.filter((c) => entSet.has(norm(c.phone)))
     return [...base].sort((a, b) => (unanswered[b.phone] ?? 0) - (unanswered[a.phone] ?? 0))
-  }, [contacts, busqueda, unanswered])
+  }, [contacts, busqueda, unanswered, tipo, prodSet, entSet])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -96,9 +117,18 @@ export default function ContactList({ contacts, loading, error, selectedPhone, o
             {showForm ? t('c.cancel') : <><Plus className="size-4" /> {t('c.add')}</>}
           </Button>
         </div>
-        <div className="px-3 pb-3">
+        <div className="space-y-2 px-3 pb-3">
           <Input type="search" placeholder={t('msg.search_contact')} value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)} className="h-8" />
+          <div className="flex gap-1">
+            {(['tots', 'productors', 'receptors'] as const).map((f) => (
+              <button key={f} type="button" onClick={() => setTipo(f)}
+                className={cn('flex-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                  tipo === f ? 'bg-secondary text-primary' : 'text-muted-foreground hover:bg-muted')}>
+                {t(f === 'tots' ? 'msg.filter_all' : f === 'productors' ? 'msg.filter_producers' : 'msg.filter_receivers')}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

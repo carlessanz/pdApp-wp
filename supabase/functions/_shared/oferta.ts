@@ -30,6 +30,35 @@ export function siglas(texto: string): string {
 }
 
 /**
+ * Convierte la respuesta libre del productor a "Fins quin dia està disponible?"
+ * en una fecha ISO (YYYY-MM-DD) para `excedentes.disponible_hasta`. Reconoce
+ * dd/mm y dd/mm/aaaa con separadores `/`, `-` o `.` (p. ej. "23/07", "23-7",
+ * "23.07.2026"). Sin año usa el actual; si esa fecha ya pasó, salta al siguiente.
+ * Devuelve null si no reconoce una fecha (el panel la normaliza a mano, como
+ * hasta ahora, y el texto de la oferta ya muestra el original).
+ */
+export function parseDisponibleFins(texto: string): string | null {
+  const m = texto.match(/\b(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?\b/);
+  if (!m) return null;
+  const dia = Number(m[1]);
+  const mes = Number(m[2]);
+  if (dia < 1 || dia > 31 || mes < 1 || mes > 12) return null;
+  const hoy = new Date();
+  let anio = m[3] ? Number(m[3]) : hoy.getFullYear();
+  if (anio < 100) anio += 2000; // "26" → 2026
+  // Sin año explícito y con la fecha ya pasada, se entiende el año siguiente.
+  if (!m[3]) {
+    const finAny = new Date(anio, mes - 1, dia);
+    const hoySolo = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    if (finAny < hoySolo) anio += 1;
+  }
+  // Rechaza fechas inexistentes (31/02, 30/02…).
+  const fecha = new Date(anio, mes - 1, dia);
+  if (fecha.getMonth() !== mes - 1 || fecha.getDate() !== dia) return null;
+  return `${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+/**
  * E-AAMMDD-XXX-YYY-N, donde N es el orden de la oferta ese día para ese
  * productor y producto. La unicidad la garantiza el `unique` de la columna:
  * si dos intakes terminan a la vez, el segundo reintenta con N+1.
@@ -157,7 +186,9 @@ export async function crearExcedenteDesdeSesion(
     preu_minim: preuMinim,
     causa: causa?.nombre ?? null,
     causa_codigo: d.causa ?? null,
-    disponible_hasta: null, // texto libre del productor; se normaliza en el panel
+    // Se intenta parsear la respuesta libre ("23/07"); si no es una fecha
+    // reconocible queda null y el panel la normaliza a mano.
+    disponible_hasta: parseDisponibleFins(String(d.disponible_fins ?? "")),
     horari_recollida: d.horari ?? null,
     observacions: d.observacions ?? null,
     valor_eur: kg ? kg * Number(prod?.eur_kg ?? 1) : null,

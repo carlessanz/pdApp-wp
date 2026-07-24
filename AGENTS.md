@@ -462,6 +462,13 @@ Trece pasos (más uno condicional): `familia` → `producte` → `varietat` → 
 `observacions`. Las opciones salen **siempre de las tablas** (`productos`, `causas`), nunca
 escritas a mano. El `preu_minim` (€/kg) queda en `excedentes` y aparece en la oferta (§5/§6ter).
 
+**`disponible_fins` → `disponible_hasta` (parseo).** La respuesta libre al paso `disponible_fins`
+(«Fins quin dia està disponible? p. ex. 23/07») se intenta convertir a fecha real con
+`parseDisponibleFins()` (`_shared/oferta.ts`): reconoce `dd/mm[/aaaa]` con separadores `/ - .`,
+infiere el año (el actual, o el siguiente si ya pasó) y rellena `disponible_hasta` al crear el
+excedente. Si no reconoce una fecha, queda `null` (como antes) y el panel la normaliza a mano; el
+texto de la oferta conserva siempre el original. Esto reduce la deuda §12.4.
+
 **Arranca preguntando, no con el cuestionario.** Ante un mensaje que no sea ALTA/BAJA de un
 productor sin sesión abierta, POMA responde con una **guía corta** (qué es, qué preguntará, y
 que puede escribir `Stop` cuando quiera) y los botones *Sí / Ara no*. Es una desviación
@@ -508,8 +515,10 @@ recibir por estar en la lista Meta, mensajes recibidos/sin contestar, sesiones d
 **buscador**; `ProducersList` **y** `EntitiesList` separan en dos grupos —primero los usuarios de
 prueba (`es_test`, badge "Test", pueden recibir), luego el resto—. Mensajería muestra la lista
 completa de contactos (ya no la conversación única), con **buscador** bajo el título «Contactes»,
-filas compactas (nombre y teléfono en una línea) y **orden por pendientes** (los contactos con
-mensajes sin contestar arriba, con contador). La columna de contactos queda **fija** con scroll
+un **filtro por tipo** (Tots / Productors / Receptors: clasifica cada contacto cruzando su teléfono
+—normalizado a solo dígitos— con `productores.phone` y `entidades.telefono`; un doble-rol sale en
+ambos), filas compactas (nombre y teléfono en una línea) y **orden por pendientes** (los contactos
+con mensajes sin contestar arriba, con contador). La columna de contactos queda **fija** con scroll
 interno propio (no scrollea la página). Desde la cabecera de la conversación se puede **borrar el
 hilo entero** (papelera): elimina los `wa_messages` del contacto y su `wa_contact` (si vuelve a
 escribir, el webhook lo recrea; §4). Layout responsive (§2).
@@ -564,13 +573,21 @@ En la consola una plantilla se registra con su **texto legible** (`TEXTO_PLANTIL
 crear excedente. Las ofertas `cancelada`/`cerrada`/`no_colocada` salen del listado de activas y
 se cuentan en el Dashboard.
 
+**Cabecera del detalle.** `OfferDetail` muestra en la cabecera la **modalitat**
+(Donació/Venda/Maquila, claves `od.mod_*`) y, en `venda`/`maquila`, el **preu mínim** (€/kg). El
+campo «Disponible fins» es un input de fecha **controlado** que arranca con la fecha parseada por el
+intake (§6bis) y persiste al editar (se re-sincroniza con `exc.disponible_hasta` tras recargar).
+
 **Priorización** (`priorizar-entidades` + `_shared/priorizacion.ts`, función pura). Dado un
 excedente, ordena las entidades candidatas. Pesos: misma área +3 (mismo municipio +2 extra);
 `transport_plataforma` +1 y `descarrega_toro` +1 (peso doble si `kg_total > 500`); producto
 fresco + entidad que acepta frescos +2; `prioritat` suma `max(0, 3 - prioritat)`. Sobre el
 `estat` (6 valores reales, no 2): `Signat` puntúa arriba; las tres variantes `Pendent*` van al
 final con aviso; `No procedeix` y sin estado se **excluyen**. Sin `opt_in` no se excluye, se
-marca (no se le puede enviar por API).
+marca (no se le puede enviar por API). Sobre ese ranking, `OfferDetail` aplica un **reorden de
+presentación estable**: primero las **contactables** (es_test + opt-in + teléfono, o es_test +
+email), sin tocar la puntuación del servidor; y añade a la línea de motivos «No és usuari de prova»
+en las que no lo son, para que se vea *por qué* el botón está gris.
 
 **Opt-in de entidades**: las 111 tienen `opt_in=false`. Se marca a mano con un toggle en el
 detalle (mecánica de PoC). En producción se combinará con el ALTA por WhatsApp.
@@ -581,8 +598,9 @@ difieren) y genera el albarán (plantilla con placeholders, `src/lib/textos.ts`)
 
 **No colocadas**: manual desde el panel (motivo obligatorio) o automático por el **job de
 vencidas** (`pg_cron`, `marcar_excedentes_vencidos()`), que marca `no_colocada` los excedentes
-con `disponible_hasta` vencida >24 h y kg sin cubrir. No actúa hasta que el panel normaliza
-`disponible_hasta` (el intake lo deja `null`).
+con `disponible_hasta` vencida >24 h y kg sin cubrir. Ahora el intake **rellena** `disponible_hasta`
+cuando la respuesta es una fecha reconocible (§6bis); si no lo es, queda `null` y el job no actúa
+hasta que el panel la normalice.
 
 ## 7. Convenciones
 
@@ -838,16 +856,17 @@ POMA en producción real quedan pasos de configuración y negocio.
    restringir las políticas de escritura de `20260722140000_crud_productores_entidades.sql`.
 3. El intake avanza de paso aunque falle el envío: si la red falla, el productor no recibe la
    pregunta pero la sesión ya avanzó, y su siguiente mensaje se lee como respuesta al paso nuevo.
-4. `disponible_hasta` se guarda `null` (el productor responde en texto libre); el técnico lo
-   normaliza en el panel, y hasta que lo haga el job de vencidas no actúa sobre ese excedente.
+4. `disponible_hasta`: el intake ahora lo **parsea** de la respuesta libre (`parseDisponibleFins`,
+   §6bis) y lo rellena cuando es una fecha reconocible; si no (texto no fechable) queda `null`, el
+   técnico lo normaliza en el panel y hasta entonces el job de vencidas no actúa sobre ese excedente.
 5. `ProducersList` **y `ContactList`** cargan **todos** los `wa_messages` sin filtro ni paginación
    para contar los no contestados, y se suscriben a Realtime sin filtro. No escala. Igual `OffersList`, que
    recarga entero ante cualquier cambio de Realtime, y el `Dashboard`, que al entrar agrega
    toda la base (productores, entidades, excedentes, canalizaciones, mensajes) en el cliente.
    Los buscadores de `ProducersList`/`OffersList` filtran **en cliente** sobre lo ya cargado.
 6. `Conversation` carga el hilo completo sin paginación.
-7. `ContactList` conserva la prop `single` (modo conversación única) pero ya no se usa: desde
-   que Mensajería muestra la lista completa, ningún llamador la pasa. Se puede eliminar.
+7. ~~`ContactList` conserva la prop `single` (modo conversación única)~~ — **resuelto**: esa prop ya
+   no existe (props actuales: `contacts`, `loading`, `error`, `selectedPhone`, `onSelect`, `onReload`).
 8. `index.css` es un único fichero global (~825 líneas) con clases sin namespace.
 9. `types.ts` no modela `raw`; `MessageRow` en `ProducersList` duplica parte de `WaMessage`.
 10. Hay migraciones que **borran datos** (`truncate wa_messages`) mezcladas con DDL.
