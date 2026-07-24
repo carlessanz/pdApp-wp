@@ -337,7 +337,10 @@ Dashboard); **`INSERT`/`UPDATE`/`DELETE` en `productores` y `entidades`** (CRUD 
 `20260722140000_crud_productores_entidades.sql`); **`INSERT`/`UPDATE`/`DELETE` en
 `oferta_respuestas`** (el panel registra el envío y marca a mano; §6ter); **`DELETE` en
 `wa_messages` y `wa_contacts`** (borrar hilos de conversación desde el panel,
-`20260723120000_borrar_conversaciones.sql`). `anon` **no tiene ningún privilegio** desde
+`20260723120000_borrar_conversaciones.sql`); **`INSERT`/`UPDATE`/`DELETE` en `canalizaciones` y
+`UPDATE` en `excedentes`** (aprobar/canalizar, kg reales, cancelar/no_colocada, «disponible fins»;
+`20260724100000_rls_gestiona_canalizaciones_excedentes.sql` — antes solo tenían `SELECT` y el panel
+fallaba con «new row violates row-level security policy»). `anon` **no tiene ningún privilegio** desde
 `20260721160000_auth_authenticated.sql`. Sin `INSERT` en `wa_messages` para nadie salvo el
 servidor: el envío pasa siempre por la Edge Function. `app_config` es **solo
 `service_role`** (§9). Realtime en `wa_contacts`, `wa_messages`, `excedentes`, `canalizaciones`
@@ -865,7 +868,8 @@ POMA en producción real quedan pasos de configuración y negocio.
 2. **No hay roles**: cualquier usuario autenticado lo ve y lo puede todo, y desde el CRUD
    también **crea, edita y borra** productores y entidades (§4). Con 452 fichas reales, dar de
    alta una cuenta = dar acceso total de lectura y escritura. Al introducir roles habrá que
-   restringir las políticas de escritura de `20260722140000_crud_productores_entidades.sql`.
+   restringir las políticas de escritura de `20260722140000_crud_productores_entidades.sql` y
+   `20260724100000_rls_gestiona_canalizaciones_excedentes.sql` (canalizar/aprobar y editar excedentes).
 3. El intake avanza de paso aunque falle el envío: si la red falla, el productor no recibe la
    pregunta pero la sesión ya avanzó, y su siguiente mensaje se lee como respuesta al paso nuevo.
 4. `disponible_hasta`: el intake ahora lo **parsea** de la respuesta libre (`parseDisponibleFins`,
